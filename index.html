@@ -319,10 +319,6 @@
                 }
 
                 document.getElementById('local-video').srcObject = localStream;
-                console.log('[LOCAL MEDIA READY]', localStream.getTracks().map(track => ({ kind: track.kind, enabled: track.enabled, readyState: track.readyState })));
-                if (!localStream.getVideoTracks().length) {
-                    addSysMsg('Камера не обнаружена: собеседники не получат видео с этого устройства.');
-                }
                 initVisualizer(localStream);
                 return true;
             } catch (err) {
@@ -399,254 +395,123 @@
             }
         }
 
-        // У каждого участника отдельные ссылки на DataConnection и MediaConnection.
-        // Медиазвонок для каждой пары инициирует только участник с меньшим ID.
-        function getPeerData(id, name = 'Ожидание...') {
-            if (!peers[id]) {
-                peers[id] = { name, conn: null, call: null, videoWrapper: null };
-            }
-            if (name && (!peers[id].name || peers[id].name === 'Ожидание...')) {
-                peers[id].name = name;
-            }
-            return peers[id];
-        }
-
-        function peerHasActiveCall(id) {
-            const current = peers[id]?.call;
-            return !!current && current.open !== false && current.peerConnection?.connectionState !== 'closed';
-        }
-
-        function ensureMediaCall(targetId, targetName = 'Ожидание...') {
-            if (!localStream || !peer.open || targetId === peer.id) return;
-            const data = getPeerData(targetId, targetName);
-
-            // Не создаём второй звонок для той же пары. Ожидаем входящий,
-            // если ID этого клиента лексикографически больше ID собеседника.
-            if (peerHasActiveCall(targetId) || peer.id > targetId) return;
-
-            console.log('[MEDIA OUTGOING]', targetId, localStream.getTracks().map(t => ({
-                kind: t.kind, enabled: t.enabled, readyState: t.readyState
-            })));
-            const call = peer.call(targetId, localStream, { metadata: { name: myName } });
-            if (!call) {
-                console.error('[MEDIA CALL FAILED] Не удалось создать звонок:', targetId);
-                return;
-            }
-            handleCall(call, data.name || targetName);
-        }
-
         peer.on('connection', (conn) => {
+            const remoteName = conn.metadata?.name || 'Аноним';
             const id = conn.peer;
-            const remoteName = conn.metadata?.name || peers[id]?.name || 'Аноним';
-            const data = getPeerData(id, remoteName);
 
-            // Не удаляем участника при открытии DataConnection: у него уже
-            // может быть активный MediaConnection.
+            if (peers[id]) removePeer(id);
+
             conn.on('open', () => {
                 setupConnectionData(conn, remoteName);
                 if (isHost) {
                     const existingPeers = Object.keys(peers)
-                        .filter(pId => pId !== id)
+                        .filter(pId => pId !== id) 
                         .map(pId => ({ id: pId, name: peers[pId].name }));
                     conn.send({ type: 'room_state', peers: existingPeers });
                 }
-                ensureMediaCall(id, remoteName);
             });
         });
 
-        function connectToPeer(targetId, targetName = 'Ожидание...') {
-            if (!targetId || targetId === peer.id) return;
-            const data = getPeerData(targetId, targetName);
-
-            if (data.conn?.open) {
-                ensureMediaCall(targetId, targetName);
-                return;
-            }
-
-            // Не создаём повторный DataConnection, если предыдущий ещё открывается.
-            if (data.conn && data.conn.open === false && data.conn.peerConnection?.connectionState !== 'closed') {
-                return;
-            }
+        function connectToPeer(targetId, targetName = "Ожидание...") {
+            if (targetId === peer.id) return; 
+            if (peers[targetId] && peers[targetId].conn && peers[targetId].conn.open) return;
 
             const conn = peer.connect(targetId, { metadata: { name: myName } });
-            data.conn = conn;
-            conn.on('open', () => {
-                setupConnectionData(conn, targetName);
-                ensureMediaCall(targetId, targetName);
-            });
-            conn.on('error', err => {
-                console.error('[DATA CONNECTION ERROR]', targetId, err);
-            });
+            if (localStream) {
+                const call = peer.call(targetId, localStream, { metadata: { name: myName } });
+                handleCall(call, targetName);
+            }
+            conn.on('open', () => { setupConnectionData(conn, targetName); });
         }
 
         function setupConnectionData(conn, remoteName) {
             const id = conn.peer;
-            const data = getPeerData(id, remoteName);
-            data.conn = conn;
-            data.name = remoteName || data.name;
+            if (!peers[id]) peers[id] = { name: remoteName };
+            peers[id].conn = conn;
+            peers[id].name = remoteName;
+            
+            addSysMsg(`${remoteName} присоединился(ась).`);
 
-            if (!conn.__messengerHandlersAttached) {
-                conn.__messengerHandlersAttached = true;
-                addSysMsg(`${data.name} присоединился(ась).`);
+            conn.peerConnection.addEventListener('iceconnectionstatechange', () => {
+                const state = conn.peerConnection.iceConnectionState;
+                if (state === 'connected') addSysMsg(`✅ P2P канал с ${remoteName} установлен`);
+                if (state === 'disconnected') addSysMsg(`⚠️ Связь с ${remoteName} нестабильна...`);
+                if (state === 'failed') addSysMsg(`❌ P2P соединение с ${remoteName} разорвано`);
+            });
 
-                if (conn.peerConnection) {
-                    conn.peerConnection.addEventListener('iceconnectionstatechange', () => {
-                        const state = conn.peerConnection.iceConnectionState;
-                        if (state === 'connected' || state === 'completed') addSysMsg(`Канал данных с ${data.name} установлен`);
-                        if (state === 'disconnected') addSysMsg(`Связь данных с ${data.name} нестабильна`);
-                        if (state === 'failed') addSysMsg(`Канал данных с ${data.name} не установлен`);
-                    });
-                }
-
-                conn.on('data', (message) => {
-                    if (typeof message === 'object' && message !== null) {
-                        if (message.type === 'room_state' && !isHost && Array.isArray(message.peers)) {
-                            message.peers.forEach(person => connectToPeer(person.id, person.name));
-                        } else if (message.type === 'name_change') {
-                            const oldName = data.name;
-                            data.name = message.name;
-                            if (data.videoWrapper) {
-                                const title = data.videoWrapper.querySelector('h3');
-                                if (title) title.textContent = message.name;
-                            }
-                            addSysMsg(`${oldName} теперь ${message.name}.`);
+            conn.on('data', (data) => {
+                if (typeof data === 'object') {
+                    if (data.type === 'room_state' && !isHost) {
+                        data.peers.forEach(p => { connectToPeer(p.id, p.name); });
+                    } else if (data.type === 'name_change') {
+                        const oldName = peers[id].name;
+                        peers[id].name = data.name;
+                        if (peers[id].videoWrapper) {
+                            peers[id].videoWrapper.querySelector('h3').innerText = data.name;
                         }
-                    } else {
-                        addChatMsg(data.name, String(message), 'other');
+                        addSysMsg(`${oldName} теперь ${data.name}.`);
                     }
-                });
+                } else {
+                    addChatMsg(peers[id].name, data, 'other');
+                }
+            });
 
-                conn.on('close', () => {
-                    if (peers[id]?.conn === conn) peers[id].conn = null;
-                    // Закрытие чата не должно само по себе убивать медиазвонок.
-                    if (peers[id] && !peers[id].call && !peers[id].videoWrapper) {
-                        delete peers[id];
-                    }
-                });
-            }
+            conn.on('close', () => removePeer(id));
+            conn.on('error', () => removePeer(id));
         }
 
         peer.on('call', (call) => {
+            const remoteName = call.metadata?.name || 'Аноним';
             const id = call.peer;
-            const remoteName = call.metadata?.name || peers[id]?.name || 'Аноним';
-            const data = getPeerData(id, remoteName);
-
-            // При дубликате оставляем уже работающий звонок.
-            if (peerHasActiveCall(id) && data.call !== call) {
-                console.warn('[MEDIA DUPLICATE] Закрываю повторный звонок от', id);
-                call.close();
-                return;
-            }
-            if (!localStream) {
-                console.error('[MEDIA ANSWER FAILED] Локальный медиапоток ещё не создан:', id);
-                call.close();
-                return;
+            
+            if (peers[id] && peers[id].call) {
+                if (peers[id].videoWrapper) peers[id].videoWrapper.remove();
             }
 
-            console.log('[MEDIA INCOMING]', id, localStream.getTracks().map(t => ({
-                kind: t.kind, enabled: t.enabled, readyState: t.readyState
-            })));
             call.answer(localStream);
             handleCall(call, remoteName);
         });
 
         function handleCall(call, name) {
             const id = call.peer;
-            const data = getPeerData(id, name);
-            data.name = name || data.name;
-            data.call = call;
-
-            const pc = call.peerConnection;
-            if (pc && !call.__diagnosticsAttached) {
-                call.__diagnosticsAttached = true;
-                const logState = label => console.log(`[MEDIA ${label}] ${data.name}:`, pc.iceConnectionState, pc.connectionState);
-                pc.addEventListener('iceconnectionstatechange', () => logState('ICE'));
-                pc.addEventListener('connectionstatechange', () => logState('CONNECTION'));
-                pc.addEventListener('track', event => {
-                    console.log('[MEDIA TRACK EVENT]', data.name, event.track.kind, event.track.readyState);
-                });
-            }
-
+            if (!peers[id]) peers[id] = { name: name };
+            peers[id].call = call;
+            
             call.on('stream', (remoteStream) => {
-                if (data.call !== call) return; // старый звонок уже заменён
-                console.log('[MEDIA STREAM]', data.name, {
-                    audio: remoteStream.getAudioTracks().map(t => ({ enabled: t.enabled, muted: t.muted, state: t.readyState })),
-                    video: remoteStream.getVideoTracks().map(t => ({ enabled: t.enabled, muted: t.muted, state: t.readyState }))
-                });
-
-                if (data.videoWrapper) {
-                    const oldVideo = data.videoWrapper.querySelector('video');
-                    if (oldVideo) oldVideo.srcObject = null;
-                    data.videoWrapper.remove();
-                    data.videoWrapper = null;
-                }
-
+                if (peers[id].videoWrapper) return;
+                
                 const wrapper = document.createElement('div');
                 wrapper.className = 'video-wrapper';
-                const title = document.createElement('h3');
-                title.textContent = data.name;
-                const fullScreenButton = document.createElement('button');
-                fullScreenButton.className = 'fullscreen-btn';
-                fullScreenButton.innerHTML = '<i class="fas fa-expand"></i>';
-                fullScreenButton.onclick = () => wrapper.classList.toggle('fullscreen-mode');
-                const videoEl = document.createElement('video');
-                videoEl.autoplay = true;
-                videoEl.playsInline = true;
-                videoEl.setAttribute('playsinline', '');
-                videoEl.setAttribute('autoplay', '');
+                
+                wrapper.innerHTML = `
+                    <h3>${peers[id].name}</h3>
+                    <button class="fullscreen-btn" onclick="this.parentElement.classList.toggle('fullscreen-mode')">
+                        <i class="fas fa-expand"></i>
+                    </button>
+                    <video playsinline></video>
+                `;
+                
+                const videoEl = wrapper.querySelector('video');
                 videoEl.srcObject = remoteStream;
-
-                wrapper.append(title, fullScreenButton, videoEl);
                 document.getElementById('video-grid').appendChild(wrapper);
-                data.videoWrapper = wrapper;
+                peers[id].videoWrapper = wrapper;
 
-                const playRemote = () => videoEl.play().then(() => {
-                    console.log('[MEDIA PLAY OK]', data.name);
-                }).catch(err => {
-                    console.warn('[MEDIA PLAY ERROR]', data.name, err.name, err.message);
-                });
-                playRemote();
-                videoEl.addEventListener('loadedmetadata', playRemote, { once: true });
+                videoEl.play().catch(err => console.log("Автоплей заблокирован браузером:", err));
             });
 
-            call.on('close', () => {
-                if (data.call !== call) return;
-                data.call = null;
-                if (data.videoWrapper) {
-                    const videoEl = data.videoWrapper.querySelector('video');
-                    if (videoEl) videoEl.srcObject = null;
-                    data.videoWrapper.remove();
-                    data.videoWrapper = null;
-                }
-                if (!data.conn) delete peers[id];
-                console.log('[MEDIA CLOSED]', data.name);
-            });
-
-            call.on('error', err => {
-                console.error('[MEDIA ERROR]', data.name, err);
-            });
+            call.on('close', () => removePeer(id));
+            call.on('error', () => removePeer(id));
         }
 
         function removePeer(id) {
-            const data = peers[id];
-            if (!data) return;
-            if (data.videoWrapper) {
-                const videoEl = data.videoWrapper.querySelector('video');
-                if (videoEl) videoEl.srcObject = null;
-                data.videoWrapper.remove();
+            if (peers[id]) {
+                if (peers[id].videoWrapper) peers[id].videoWrapper.remove();
+                if (peers[id].conn) peers[id].conn.close();
+                if (peers[id].call) peers[id].call.close();
+                
+                addSysMsg(`${peers[id].name} покинул(а) комнату.`);
+                delete peers[id];
             }
-            if (data.conn) {
-                const conn = data.conn;
-                data.conn = null;
-                conn.close();
-            }
-            if (data.call) {
-                const call = data.call;
-                data.call = null;
-                call.close();
-            }
-            addSysMsg(`${data.name} покинул(а) комнату.`);
-            delete peers[id];
         }
 
         function toggleMic() {
