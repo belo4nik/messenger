@@ -236,11 +236,44 @@
         let camEnabled = false;
         let isScreenSharing = false;
         const peers = {};
+        const pendingCalls = new Set();
+
+        // Создаём/получаем запись участника, не уничтожая уже существующий звонок.
+        function ensurePeerRecord(id, name = 'Аноним') {
+            if (!peers[id]) peers[id] = { name, conn: null, call: null, videoWrapper: null };
+            if (name && (!peers[id].name || peers[id].name === 'Аноним' || peers[id].name === 'Ожидание...')) {
+                peers[id].name = name;
+            }
+            return peers[id];
+        }
+
+        function watchMediaConnection(call, id) {
+            // PeerJS создаёт RTCPeerConnection при создании MediaConnection.
+            const logState = () => {
+                const pc = call.peerConnection;
+                if (!pc || call.__diagnosticsAttached) return;
+                call.__diagnosticsAttached = true;
+                const log = (kind, state) => console.log(`[WebRTC ${kind}] ${id}:`, state);
+                log('ICE initial', pc.iceConnectionState);
+                log('connection initial', pc.connectionState);
+                pc.addEventListener('iceconnectionstatechange', () => log('ICE', pc.iceConnectionState));
+                pc.addEventListener('connectionstatechange', () => log('connection', pc.connectionState));
+                pc.addEventListener('icegatheringstatechange', () => log('ICE gathering', pc.iceGatheringState));
+            };
+            logState();
+            // На случай, если PeerConnection появился чуть позже.
+            setTimeout(logState, 0);
+        }
 
         let audioCtx, analyser, dataArray;
         let uiAudioContext = null;
         let lastUiSoundAt = 0;
         let wakeLock = null; // Для запрета засыпания экрана
+        let peerReady = false;
+        peer.on('open', (id) => {
+            peerReady = true;
+            console.log('PeerJS готов, ID:', id);
+        });
 
         // Автозаполнение имени из кеша
         if (localStorage.getItem('my_p2p_name')) {
@@ -367,6 +400,7 @@
             const nameInput = document.getElementById('username').value.trim();
             let hostInput = document.getElementById('host-id').value.trim();
             if (!nameInput) return alert('Пожалуйста, введите ваше имя!');
+            if (!peerReady || !peer.id) return alert('Соединение с сервером ещё устанавливается. Подождите несколько секунд и попробуйте снова.');
             
             myName = nameInput;
             localStorage.setItem('my_p2p_name', myName); 
@@ -407,125 +441,222 @@
         }
 
         peer.on('connection', (conn) => {
-            const remoteName = conn.metadata?.name || 'Аноним';
             const id = conn.peer;
+            const remoteName = conn.metadata?.name || 'Аноним';
+            const record = ensurePeerRecord(id, remoteName);
 
-            if (peers[id]) removePeer(id);
+            // Если повторно пришёл канал данных, закрываем только дубликат,
+            // но никогда не удаляем весь peer: у него уже может идти медиазвонок.
+            if (record.conn && record.conn !== conn && record.conn.open) {
+                conn.close();
+                return;
+            }
 
-            conn.on('open', () => {
+            const setup = () => {
                 setupConnectionData(conn, remoteName);
                 if (isHost) {
                     const existingPeers = Object.keys(peers)
-                        .filter(pId => pId !== id) 
+                        .filter(pId => pId !== id)
                         .map(pId => ({ id: pId, name: peers[pId].name }));
-                    conn.send({ type: 'room_state', peers: existingPeers });
+                    try {
+                        conn.send({ type: 'room_state', peers: existingPeers });
+                    } catch (err) {
+                        console.warn('Не удалось отправить room_state:', err);
+                    }
                 }
-            });
+            };
+
+            if (conn.open) setup();
+            else conn.on('open', setup);
         });
 
         function connectToPeer(targetId, targetName = "Ожидание...") {
-            if (targetId === peer.id) return; 
-            if (peers[targetId] && peers[targetId].conn && peers[targetId].conn.open) return;
+            if (!targetId || targetId === peer.id) return;
 
-            const conn = peer.connect(targetId, { metadata: { name: myName } });
-            if (localStream) {
-                const call = peer.call(targetId, localStream, { metadata: { name: myName } });
-                handleCall(call, targetName);
+            const record = ensurePeerRecord(targetId, targetName);
+            if (record.conn && record.conn.open && record.call && !record.call.open && record.call.open !== undefined) {
+                // Старый/закрывающийся звонок будет заменён ниже.
+                record.call = null;
             }
-            conn.on('open', () => { setupConnectionData(conn, targetName); });
+
+            if (!record.conn || record.conn.open === false) {
+                const conn = peer.connect(targetId, { metadata: { name: myName }, reliable: true });
+                record.conn = conn;
+                conn.on('open', () => setupConnectionData(conn, targetName));
+                conn.on('error', err => console.error('DataConnection error:', targetId, err));
+            }
+
+            // Один исходящий медиазвонок на участника. Повторный room_state
+            // не должен создавать дополнительные звонки.
+            if (localStream && !record.call && !pendingCalls.has(targetId)) {
+                pendingCalls.add(targetId);
+                try {
+                    const call = peer.call(targetId, localStream, { metadata: { name: myName } });
+                    if (call) {
+                        record.call = call;
+                        watchMediaConnection(call, targetId);
+                        handleCall(call, targetName);
+                    } else {
+                        console.error('PeerJS не создал MediaConnection для', targetId);
+                    }
+                } catch (err) {
+                    console.error('Не удалось начать медиазвонок:', targetId, err);
+                } finally {
+                    // Не блокируем повторную попытку навсегда, если звонок не установился.
+                    setTimeout(() => pendingCalls.delete(targetId), 5000);
+                }
+            }
         }
 
         function setupConnectionData(conn, remoteName) {
             const id = conn.peer;
-            if (!peers[id]) peers[id] = { name: remoteName };
-            peers[id].conn = conn;
-            peers[id].name = remoteName;
-            
-            addSysMsg(`${remoteName} присоединился(ась).`);
+            const record = ensurePeerRecord(id, remoteName);
 
-            conn.peerConnection.addEventListener('iceconnectionstatechange', () => {
-                const state = conn.peerConnection.iceConnectionState;
-                if (state === 'connected') addSysMsg(`✅ P2P канал с ${remoteName} установлен`);
-                if (state === 'disconnected') addSysMsg(`⚠️ Связь с ${remoteName} нестабильна...`);
-                if (state === 'failed') addSysMsg(`❌ P2P соединение с ${remoteName} разорвано`);
-            });
+            // Не перезаписываем более новый открытый канал старым обработчиком.
+            if (record.conn && record.conn !== conn && record.conn.open) {
+                conn.close();
+                return;
+            }
+            record.conn = conn;
+            if (remoteName && remoteName !== 'Ожидание...') record.name = remoteName;
+
+            if (conn.__handlersAttached) return;
+            conn.__handlersAttached = true;
+            addSysMsg(`${record.name} присоединился(ась).`);
 
             conn.on('data', (data) => {
-                if (typeof data === 'object') {
-                    if (data.type === 'room_state' && !isHost) {
-                        data.peers.forEach(p => { connectToPeer(p.id, p.name); });
+                if (typeof data === 'object' && data !== null) {
+                    if (data.type === 'room_state' && !isHost && Array.isArray(data.peers)) {
+                        data.peers.forEach(p => {
+                            if (p && p.id) connectToPeer(p.id, p.name || 'Участник');
+                        });
                     } else if (data.type === 'name_change') {
-                        const oldName = peers[id].name;
-                        peers[id].name = data.name;
-                        if (peers[id].videoWrapper) {
-                            peers[id].videoWrapper.querySelector('h3').innerText = data.name;
+                        const oldName = record.name;
+                        record.name = data.name || oldName;
+                        if (record.videoWrapper) {
+                            const title = record.videoWrapper.querySelector('h3');
+                            if (title) title.innerText = record.name;
                         }
-                        addSysMsg(`${oldName} теперь ${data.name}.`);
+                        addSysMsg(`${oldName} теперь ${record.name}.`);
                     }
                 } else {
-                    addChatMsg(peers[id].name, data, 'other');
+                    addChatMsg(record.name, data, 'other');
                 }
             });
 
-            conn.on('close', () => removePeer(id));
-            conn.on('error', () => removePeer(id));
+            conn.on('close', () => {
+                if (peers[id] && peers[id].conn === conn) peers[id].conn = null;
+                // Не удаляем медиазвонок только потому, что закрылся канал чата.
+            });
+            conn.on('error', err => console.error('DataConnection error:', id, err));
         }
 
         peer.on('call', (call) => {
             const remoteName = call.metadata?.name || 'Аноним';
             const id = call.peer;
-            
-            if (peers[id] && peers[id].call) {
-                if (peers[id].videoWrapper) peers[id].videoWrapper.remove();
+            const record = ensurePeerRecord(id, remoteName);
+
+            // Если уже есть активный звонок от этого участника, не создаём второй.
+            if (record.call && record.call !== call) {
+                const oldState = record.call.peerConnection?.connectionState;
+                if (oldState === 'connected' || oldState === 'connecting') {
+                    call.close();
+                    return;
+                }
+                try { record.call.close(); } catch (e) {}
             }
 
+            record.call = call;
             call.answer(localStream);
+            watchMediaConnection(call, id);
             handleCall(call, remoteName);
         });
 
         function handleCall(call, name) {
             const id = call.peer;
-            if (!peers[id]) peers[id] = { name: name };
-            peers[id].call = call;
-            
-            call.on('stream', (remoteStream) => {
-                if (peers[id].videoWrapper) return;
-                
-                const wrapper = document.createElement('div');
-                wrapper.className = 'video-wrapper';
-                
-                wrapper.innerHTML = `
-                    <h3>${peers[id].name}</h3>
-                    <button class="fullscreen-btn" onclick="this.parentElement.classList.toggle('fullscreen-mode')">
-                        <i class="fas fa-expand"></i>
-                    </button>
-                    <video playsinline></video>
-                `;
-                
-                const videoEl = wrapper.querySelector('video');
-                videoEl.srcObject = remoteStream;
-                document.getElementById('video-grid').appendChild(wrapper);
-                peers[id].videoWrapper = wrapper;
+            const record = ensurePeerRecord(id, name);
+            record.call = call;
 
-                videoEl.play().catch(err => console.log("Автоплей заблокирован браузером:", err));
+            call.on('stream', (remoteStream) => {
+                console.log('Получен медиапоток от:', id, {
+                    audio: remoteStream.getAudioTracks().map(t => ({ enabled: t.enabled, muted: t.muted, readyState: t.readyState })),
+                    video: remoteStream.getVideoTracks().map(t => ({ enabled: t.enabled, muted: t.muted, readyState: t.readyState }))
+                });
+
+                // При повторном stream используем существующий элемент.
+                let wrapper = record.videoWrapper;
+                let videoEl;
+                if (wrapper) {
+                    videoEl = wrapper.querySelector('video');
+                    if (videoEl) videoEl.srcObject = remoteStream;
+                } else {
+                    wrapper = document.createElement('div');
+                    wrapper.className = 'video-wrapper';
+                    wrapper.innerHTML = `
+                        <h3></h3>
+                        <button class="fullscreen-btn" onclick="this.parentElement.classList.toggle('fullscreen-mode')">
+                            <i class="fas fa-expand"></i>
+                        </button>
+                        <video autoplay playsinline></video>
+                    `;
+                    wrapper.querySelector('h3').innerText = record.name || name || 'Участник';
+                    videoEl = wrapper.querySelector('video');
+                    videoEl.autoplay = true;
+                    videoEl.playsInline = true;
+                    videoEl.muted = false;
+                    videoEl.srcObject = remoteStream;
+                    document.getElementById('video-grid').appendChild(wrapper);
+                    record.videoWrapper = wrapper;
+                }
+
+                if (videoEl) {
+                    videoEl.autoplay = true;
+                    videoEl.playsInline = true;
+                    videoEl.muted = false;
+                    videoEl.srcObject = remoteStream;
+                    const tryPlay = () => videoEl.play().catch(err => {
+                        console.warn('Автовоспроизведение потока заблокировано браузером:', id, err);
+                        addSysMsg(`Браузер заблокировал воспроизведение потока ${record.name}. Нажмите на видео или взаимодействуйте со страницей.`);
+                    });
+                    videoEl.onloadedmetadata = tryPlay;
+                    tryPlay();
+                }
             });
 
-            call.on('close', () => removePeer(id));
-            call.on('error', () => removePeer(id));
+            call.on('close', () => {
+                if (peers[id] && peers[id].call === call) {
+                    peers[id].call = null;
+                    if (peers[id].videoWrapper) {
+                        peers[id].videoWrapper.remove();
+                        peers[id].videoWrapper = null;
+                    }
+                }
+                pendingCalls.delete(id);
+            });
+            call.on('error', err => {
+                console.error('MediaConnection error:', id, err);
+                if (peers[id] && peers[id].call === call) peers[id].call = null;
+                pendingCalls.delete(id);
+            });
         }
 
         function removePeer(id) {
-            if (peers[id]) {
-                if (peers[id].videoWrapper) peers[id].videoWrapper.remove();
-                if (peers[id].conn) peers[id].conn.close();
-                if (peers[id].call) peers[id].call.close();
-                
-                addSysMsg(`${peers[id].name} покинул(а) комнату.`);
-                delete peers[id];
+            const record = peers[id];
+            if (!record) return;
+            if (record.videoWrapper) record.videoWrapper.remove();
+            if (record.conn) {
+                try { record.conn.close(); } catch (e) {}
             }
+            if (record.call) {
+                try { record.call.close(); } catch (e) {}
+            }
+            addSysMsg(`${record.name} покинул(а) комнату.`);
+            delete peers[id];
+            pendingCalls.delete(id);
         }
 
         function toggleMic() {
+            if (!localStream) return;
             micEnabled = !micEnabled;
             localStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
             const btn = document.getElementById('btn-mic');
@@ -543,6 +674,7 @@
         }
 
         function toggleCam() {
+            if (!localStream) return;
             camEnabled = !camEnabled;
             localStream.getVideoTracks().forEach(t => t.enabled = camEnabled);
             const btn = document.getElementById('btn-cam');
