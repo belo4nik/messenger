@@ -210,17 +210,8 @@
             path: '/myapp',
             config: {
                 'iceServers': [
-                    // STUN для обычных сетей (ПК <-> Мобилка)
                     { urls: 'stun:stun.l.google.com:19302' },
-                    // Публичный TURN для диагностики. Для постоянной работы лучше свой coturn.
-                    {
-                        urls: [
-                            'turn:openrelay.metered.ca:80',
-                            'turn:openrelay.metered.ca:443?transport=tcp'
-                        ],
-                        username: 'openrelayproject',
-                        credential: 'openrelayproject'
-                    }
+                    { urls: 'stun:global.stun.twilio.com:3478' }
                 ]
             }
         });
@@ -234,44 +225,11 @@
         let camEnabled = false;
         let isScreenSharing = false;
         const peers = {};
-        const pendingCalls = new Set();
-
-        // Создаём/получаем запись участника, не уничтожая уже существующий звонок.
-        function ensurePeerRecord(id, name = 'Аноним') {
-            if (!peers[id]) peers[id] = { name, conn: null, call: null, videoWrapper: null };
-            if (name && (!peers[id].name || peers[id].name === 'Аноним' || peers[id].name === 'Ожидание...')) {
-                peers[id].name = name;
-            }
-            return peers[id];
-        }
-
-        function watchMediaConnection(call, id) {
-            // PeerJS создаёт RTCPeerConnection при создании MediaConnection.
-            const logState = () => {
-                const pc = call.peerConnection;
-                if (!pc || call.__diagnosticsAttached) return;
-                call.__diagnosticsAttached = true;
-                const log = (kind, state) => console.log(`[WebRTC ${kind}] ${id}:`, state);
-                log('ICE initial', pc.iceConnectionState);
-                log('connection initial', pc.connectionState);
-                pc.addEventListener('iceconnectionstatechange', () => log('ICE', pc.iceConnectionState));
-                pc.addEventListener('connectionstatechange', () => log('connection', pc.connectionState));
-                pc.addEventListener('icegatheringstatechange', () => log('ICE gathering', pc.iceGatheringState));
-            };
-            logState();
-            // На случай, если PeerConnection появился чуть позже.
-            setTimeout(logState, 0);
-        }
 
         let audioCtx, analyser, dataArray;
         let uiAudioContext = null;
         let lastUiSoundAt = 0;
         let wakeLock = null; // Для запрета засыпания экрана
-        let peerReady = false;
-        peer.on('open', (id) => {
-            peerReady = true;
-            console.log('PeerJS готов, ID:', id);
-        });
 
         // Автозаполнение имени из кеша
         if (localStorage.getItem('my_p2p_name')) {
@@ -361,6 +319,10 @@
                 }
 
                 document.getElementById('local-video').srcObject = localStream;
+                console.log('[LOCAL MEDIA READY]', localStream.getTracks().map(track => ({ kind: track.kind, enabled: track.enabled, readyState: track.readyState })));
+                if (!localStream.getVideoTracks().length) {
+                    addSysMsg('Камера не обнаружена: собеседники не получат видео с этого устройства.');
+                }
                 initVisualizer(localStream);
                 return true;
             } catch (err) {
@@ -398,7 +360,6 @@
             const nameInput = document.getElementById('username').value.trim();
             let hostInput = document.getElementById('host-id').value.trim();
             if (!nameInput) return alert('Пожалуйста, введите ваше имя!');
-            if (!peerReady || !peer.id) return alert('Соединение с сервером ещё устанавливается. Подождите несколько секунд и попробуйте снова.');
             
             myName = nameInput;
             localStorage.setItem('my_p2p_name', myName); 
@@ -438,259 +399,257 @@
             }
         }
 
-        peer.on('connection', (conn) => {
-            const id = conn.peer;
-            const remoteName = conn.metadata?.name || 'Аноним';
-            const record = ensurePeerRecord(id, remoteName);
+        // У каждого участника отдельные ссылки на DataConnection и MediaConnection.
+        // Медиазвонок для каждой пары инициирует только участник с меньшим ID.
+        function getPeerData(id, name = 'Ожидание...') {
+            if (!peers[id]) {
+                peers[id] = { name, conn: null, call: null, videoWrapper: null };
+            }
+            if (name && (!peers[id].name || peers[id].name === 'Ожидание...')) {
+                peers[id].name = name;
+            }
+            return peers[id];
+        }
 
-            // Если повторно пришёл канал данных, закрываем только дубликат,
-            // но никогда не удаляем весь peer: у него уже может идти медиазвонок.
-            if (record.conn && record.conn !== conn && record.conn.open) {
-                conn.close();
+        function peerHasActiveCall(id) {
+            const current = peers[id]?.call;
+            return !!current && current.open !== false && current.peerConnection?.connectionState !== 'closed';
+        }
+
+        function ensureMediaCall(targetId, targetName = 'Ожидание...') {
+            if (!localStream || !peer.open || targetId === peer.id) return;
+            const data = getPeerData(targetId, targetName);
+
+            // Не создаём второй звонок для той же пары. Ожидаем входящий,
+            // если ID этого клиента лексикографически больше ID собеседника.
+            if (peerHasActiveCall(targetId) || peer.id > targetId) return;
+
+            console.log('[MEDIA OUTGOING]', targetId, localStream.getTracks().map(t => ({
+                kind: t.kind, enabled: t.enabled, readyState: t.readyState
+            })));
+            const call = peer.call(targetId, localStream, { metadata: { name: myName } });
+            if (!call) {
+                console.error('[MEDIA CALL FAILED] Не удалось создать звонок:', targetId);
                 return;
             }
+            handleCall(call, data.name || targetName);
+        }
 
-            const setup = () => {
+        peer.on('connection', (conn) => {
+            const id = conn.peer;
+            const remoteName = conn.metadata?.name || peers[id]?.name || 'Аноним';
+            const data = getPeerData(id, remoteName);
+
+            // Не удаляем участника при открытии DataConnection: у него уже
+            // может быть активный MediaConnection.
+            conn.on('open', () => {
                 setupConnectionData(conn, remoteName);
                 if (isHost) {
                     const existingPeers = Object.keys(peers)
                         .filter(pId => pId !== id)
                         .map(pId => ({ id: pId, name: peers[pId].name }));
-                    try {
-                        conn.send({ type: 'room_state', peers: existingPeers });
-                    } catch (err) {
-                        console.warn('Не удалось отправить room_state:', err);
-                    }
-                    // Уведомляем уже подключённых участников о новом участнике.
-                    // Это важно, если два iPhone входят почти одновременно.
-                    const roomPeers = Object.keys(peers)
-                        .filter(pId => pId !== peer.id)
-                        .map(pId => ({ id: pId, name: peers[pId].name }));
-                    Object.entries(peers).forEach(([pId, p]) => {
-                        if (pId !== id && p.conn && p.conn.open) {
-                            try { p.conn.send({ type: 'room_state', peers: roomPeers }); }
-                            catch (err) { console.warn('Не удалось обновить состав комнаты:', pId, err); }
-                        }
-                    });
-                    // Если ID организатора меньше ID нового участника, организатор — инициатор медиазвонка.
-                    if (myPeerId.localeCompare(id) < 0) {
-                        setTimeout(() => connectToPeer(id, remoteName), 0);
-                    }
+                    conn.send({ type: 'room_state', peers: existingPeers });
                 }
-            };
-
-            if (conn.open) setup();
-            else conn.on('open', setup);
+                ensureMediaCall(id, remoteName);
+            });
         });
 
-        function connectToPeer(targetId, targetName = "Ожидание...") {
+        function connectToPeer(targetId, targetName = 'Ожидание...') {
             if (!targetId || targetId === peer.id) return;
+            const data = getPeerData(targetId, targetName);
 
-            const record = ensurePeerRecord(targetId, targetName);
-            if (record.conn && record.conn.open && record.call && !record.call.open && record.call.open !== undefined) {
-                // Старый/закрывающийся звонок будет заменён ниже.
-                record.call = null;
+            if (data.conn?.open) {
+                ensureMediaCall(targetId, targetName);
+                return;
             }
 
-            if (!record.conn || record.conn.open === false) {
-                const conn = peer.connect(targetId, { metadata: { name: myName }, reliable: true });
-                record.conn = conn;
-                conn.on('open', () => setupConnectionData(conn, targetName));
-                conn.on('error', err => console.error('DataConnection error:', targetId, err));
+            // Не создаём повторный DataConnection, если предыдущий ещё открывается.
+            if (data.conn && data.conn.open === false && data.conn.peerConnection?.connectionState !== 'closed') {
+                return;
             }
 
-            // Один исходящий медиазвонок на участника. Повторный room_state
-            // не должен создавать дополнительные звонки.
-            // Для каждой пары инициатор только один: участник с лексикографически меньшим ID.
-            // Второй участник принимает входящий call в peer.on('call').
-            if (localStream && myPeerId.localeCompare(targetId) < 0 && !record.call && !pendingCalls.has(targetId)) {
-                pendingCalls.add(targetId);
-                try {
-                    const call = peer.call(targetId, localStream, { metadata: { name: myName } });
-                    if (call) {
-                        record.call = call;
-                        watchMediaConnection(call, targetId);
-                        handleCall(call, targetName);
-                    } else {
-                        console.error('PeerJS не создал MediaConnection для', targetId);
-                    }
-                } catch (err) {
-                    console.error('Не удалось начать медиазвонок:', targetId, err);
-                } finally {
-                    // Не блокируем повторную попытку навсегда, если звонок не установился.
-                    setTimeout(() => pendingCalls.delete(targetId), 5000);
-                }
-            }
+            const conn = peer.connect(targetId, { metadata: { name: myName } });
+            data.conn = conn;
+            conn.on('open', () => {
+                setupConnectionData(conn, targetName);
+                ensureMediaCall(targetId, targetName);
+            });
+            conn.on('error', err => {
+                console.error('[DATA CONNECTION ERROR]', targetId, err);
+            });
         }
 
         function setupConnectionData(conn, remoteName) {
             const id = conn.peer;
-            const record = ensurePeerRecord(id, remoteName);
+            const data = getPeerData(id, remoteName);
+            data.conn = conn;
+            data.name = remoteName || data.name;
 
-            // Не перезаписываем более новый открытый канал старым обработчиком.
-            if (record.conn && record.conn !== conn && record.conn.open) {
-                conn.close();
-                return;
-            }
-            record.conn = conn;
-            if (remoteName && remoteName !== 'Ожидание...') record.name = remoteName;
+            if (!conn.__messengerHandlersAttached) {
+                conn.__messengerHandlersAttached = true;
+                addSysMsg(`${data.name} присоединился(ась).`);
 
-            if (conn.__handlersAttached) return;
-            conn.__handlersAttached = true;
-            addSysMsg(`${record.name} присоединился(ась).`);
-
-            conn.on('data', (data) => {
-                if (typeof data === 'object' && data !== null) {
-                    if (data.type === 'room_state' && !isHost && Array.isArray(data.peers)) {
-                        data.peers.forEach(p => {
-                            if (p && p.id) connectToPeer(p.id, p.name || 'Участник');
-                        });
-                    } else if (data.type === 'name_change') {
-                        const oldName = record.name;
-                        record.name = data.name || oldName;
-                        if (record.videoWrapper) {
-                            const title = record.videoWrapper.querySelector('h3');
-                            if (title) title.innerText = record.name;
-                        }
-                        addSysMsg(`${oldName} теперь ${record.name}.`);
-                    }
-                } else {
-                    addChatMsg(record.name, data, 'other');
+                if (conn.peerConnection) {
+                    conn.peerConnection.addEventListener('iceconnectionstatechange', () => {
+                        const state = conn.peerConnection.iceConnectionState;
+                        if (state === 'connected' || state === 'completed') addSysMsg(`Канал данных с ${data.name} установлен`);
+                        if (state === 'disconnected') addSysMsg(`Связь данных с ${data.name} нестабильна`);
+                        if (state === 'failed') addSysMsg(`Канал данных с ${data.name} не установлен`);
+                    });
                 }
-            });
 
-            conn.on('close', () => {
-                if (peers[id] && peers[id].conn === conn) peers[id].conn = null;
-                // Не удаляем медиазвонок только потому, что закрылся канал чата.
-            });
-            conn.on('error', err => console.error('DataConnection error:', id, err));
+                conn.on('data', (message) => {
+                    if (typeof message === 'object' && message !== null) {
+                        if (message.type === 'room_state' && !isHost && Array.isArray(message.peers)) {
+                            message.peers.forEach(person => connectToPeer(person.id, person.name));
+                        } else if (message.type === 'name_change') {
+                            const oldName = data.name;
+                            data.name = message.name;
+                            if (data.videoWrapper) {
+                                const title = data.videoWrapper.querySelector('h3');
+                                if (title) title.textContent = message.name;
+                            }
+                            addSysMsg(`${oldName} теперь ${message.name}.`);
+                        }
+                    } else {
+                        addChatMsg(data.name, String(message), 'other');
+                    }
+                });
+
+                conn.on('close', () => {
+                    if (peers[id]?.conn === conn) peers[id].conn = null;
+                    // Закрытие чата не должно само по себе убивать медиазвонок.
+                    if (peers[id] && !peers[id].call && !peers[id].videoWrapper) {
+                        delete peers[id];
+                    }
+                });
+            }
         }
 
         peer.on('call', (call) => {
-            const remoteName = call.metadata?.name || 'Аноним';
             const id = call.peer;
-            const record = ensurePeerRecord(id, remoteName);
+            const remoteName = call.metadata?.name || peers[id]?.name || 'Аноним';
+            const data = getPeerData(id, remoteName);
 
-            // Если уже есть активный звонок от этого участника, не создаём второй.
-            if (record.call && record.call !== call) {
-                const oldState = record.call.peerConnection?.connectionState;
-                if (oldState === 'connected' || oldState === 'connecting') {
-                    call.close();
-                    return;
-                }
-                try { record.call.close(); } catch (e) {}
+            // При дубликате оставляем уже работающий звонок.
+            if (peerHasActiveCall(id) && data.call !== call) {
+                console.warn('[MEDIA DUPLICATE] Закрываю повторный звонок от', id);
+                call.close();
+                return;
+            }
+            if (!localStream) {
+                console.error('[MEDIA ANSWER FAILED] Локальный медиапоток ещё не создан:', id);
+                call.close();
+                return;
             }
 
-            record.call = call;
+            console.log('[MEDIA INCOMING]', id, localStream.getTracks().map(t => ({
+                kind: t.kind, enabled: t.enabled, readyState: t.readyState
+            })));
             call.answer(localStream);
-            watchMediaConnection(call, id);
             handleCall(call, remoteName);
         });
 
         function handleCall(call, name) {
             const id = call.peer;
-            const record = ensurePeerRecord(id, name);
-            record.call = call;
+            const data = getPeerData(id, name);
+            data.name = name || data.name;
+            data.call = call;
+
+            const pc = call.peerConnection;
+            if (pc && !call.__diagnosticsAttached) {
+                call.__diagnosticsAttached = true;
+                const logState = label => console.log(`[MEDIA ${label}] ${data.name}:`, pc.iceConnectionState, pc.connectionState);
+                pc.addEventListener('iceconnectionstatechange', () => logState('ICE'));
+                pc.addEventListener('connectionstatechange', () => logState('CONNECTION'));
+                pc.addEventListener('track', event => {
+                    console.log('[MEDIA TRACK EVENT]', data.name, event.track.kind, event.track.readyState);
+                });
+            }
 
             call.on('stream', (remoteStream) => {
-                console.log('Получен медиапоток от:', id, {
-                    audio: remoteStream.getAudioTracks().map(t => ({ enabled: t.enabled, muted: t.muted, readyState: t.readyState })),
-                    video: remoteStream.getVideoTracks().map(t => ({ enabled: t.enabled, muted: t.muted, readyState: t.readyState }))
+                if (data.call !== call) return; // старый звонок уже заменён
+                console.log('[MEDIA STREAM]', data.name, {
+                    audio: remoteStream.getAudioTracks().map(t => ({ enabled: t.enabled, muted: t.muted, state: t.readyState })),
+                    video: remoteStream.getVideoTracks().map(t => ({ enabled: t.enabled, muted: t.muted, state: t.readyState }))
                 });
 
-                // При повторном stream используем существующий элемент.
-                let wrapper = record.videoWrapper;
-                let videoEl;
-                if (wrapper) {
-                    videoEl = wrapper.querySelector('video');
-                    if (videoEl) videoEl.srcObject = remoteStream;
-                } else {
-                    wrapper = document.createElement('div');
-                    wrapper.className = 'video-wrapper';
-                    wrapper.innerHTML = `
-                        <h3></h3>
-                        <button class="fullscreen-btn" onclick="this.parentElement.classList.toggle('fullscreen-mode')">
-                            <i class="fas fa-expand"></i>
-                        </button>
-                        <video autoplay playsinline></video>
-                    `;
-                    wrapper.querySelector('h3').innerText = record.name || name || 'Участник';
-                    videoEl = wrapper.querySelector('video');
-                    videoEl.autoplay = true;
-                    videoEl.playsInline = true;
-                    videoEl.muted = false;
-                    videoEl.srcObject = remoteStream;
-                    document.getElementById('video-grid').appendChild(wrapper);
-                    record.videoWrapper = wrapper;
+                if (data.videoWrapper) {
+                    const oldVideo = data.videoWrapper.querySelector('video');
+                    if (oldVideo) oldVideo.srcObject = null;
+                    data.videoWrapper.remove();
+                    data.videoWrapper = null;
                 }
 
-                if (videoEl) {
-                    videoEl.autoplay = true;
-                    videoEl.playsInline = true;
-                    videoEl.muted = false;
-                    videoEl.srcObject = remoteStream;
-                    const tryPlay = () => videoEl.play().catch(err => {
-                        console.warn('Автовоспроизведение потока заблокировано браузером:', id, err);
-                        addSysMsg(`Браузер заблокировал воспроизведение потока ${record.name}. Нажмите на видео или взаимодействуйте со страницей.`);
-                    });
-                    videoEl.onloadedmetadata = tryPlay;
-                    tryPlay();
-                }
+                const wrapper = document.createElement('div');
+                wrapper.className = 'video-wrapper';
+                const title = document.createElement('h3');
+                title.textContent = data.name;
+                const fullScreenButton = document.createElement('button');
+                fullScreenButton.className = 'fullscreen-btn';
+                fullScreenButton.innerHTML = '<i class="fas fa-expand"></i>';
+                fullScreenButton.onclick = () => wrapper.classList.toggle('fullscreen-mode');
+                const videoEl = document.createElement('video');
+                videoEl.autoplay = true;
+                videoEl.playsInline = true;
+                videoEl.setAttribute('playsinline', '');
+                videoEl.setAttribute('autoplay', '');
+                videoEl.srcObject = remoteStream;
+
+                wrapper.append(title, fullScreenButton, videoEl);
+                document.getElementById('video-grid').appendChild(wrapper);
+                data.videoWrapper = wrapper;
+
+                const playRemote = () => videoEl.play().then(() => {
+                    console.log('[MEDIA PLAY OK]', data.name);
+                }).catch(err => {
+                    console.warn('[MEDIA PLAY ERROR]', data.name, err.name, err.message);
+                });
+                playRemote();
+                videoEl.addEventListener('loadedmetadata', playRemote, { once: true });
             });
 
             call.on('close', () => {
-                if (peers[id] && peers[id].call === call) {
-                    peers[id].call = null;
-                    if (peers[id].videoWrapper) {
-                        peers[id].videoWrapper.remove();
-                        peers[id].videoWrapper = null;
-                    }
+                if (data.call !== call) return;
+                data.call = null;
+                if (data.videoWrapper) {
+                    const videoEl = data.videoWrapper.querySelector('video');
+                    if (videoEl) videoEl.srcObject = null;
+                    data.videoWrapper.remove();
+                    data.videoWrapper = null;
                 }
-                pendingCalls.delete(id);
+                if (!data.conn) delete peers[id];
+                console.log('[MEDIA CLOSED]', data.name);
             });
+
             call.on('error', err => {
-                console.error('MediaConnection error:', id, err);
-                if (peers[id] && peers[id].call === call) peers[id].call = null;
-                pendingCalls.delete(id);
+                console.error('[MEDIA ERROR]', data.name, err);
             });
         }
 
         function removePeer(id) {
-            const record = peers[id];
-            if (!record) return;
-            if (record.videoWrapper) record.videoWrapper.remove();
-            if (record.conn) {
-                try { record.conn.close(); } catch (e) {}
+            const data = peers[id];
+            if (!data) return;
+            if (data.videoWrapper) {
+                const videoEl = data.videoWrapper.querySelector('video');
+                if (videoEl) videoEl.srcObject = null;
+                data.videoWrapper.remove();
             }
-            if (record.call) {
-                try { record.call.close(); } catch (e) {}
+            if (data.conn) {
+                const conn = data.conn;
+                data.conn = null;
+                conn.close();
             }
-            addSysMsg(`${record.name} покинул(а) комнату.`);
+            if (data.call) {
+                const call = data.call;
+                data.call = null;
+                call.close();
+            }
+            addSysMsg(`${data.name} покинул(а) комнату.`);
             delete peers[id];
-            pendingCalls.delete(id);
         }
 
-        // Диагностика: в консоли вызови debugPeerAudio() и сравни packetsReceived.
-        window.debugPeerAudio = async function () {
-            for (const [id, p] of Object.entries(peers)) {
-                const pc = p.call?.peerConnection;
-                if (!pc) { console.log('[AUDIO STATS]', p.name, 'нет медиасоединения'); continue; }
-                const stats = await pc.getStats();
-                const rows = [];
-                stats.forEach(s => {
-                    if (s.type === 'inbound-rtp' && (s.kind === 'audio' || s.mediaType === 'audio')) {
-                        rows.push({ direction: 'inbound', bytes: s.bytesReceived, packets: s.packetsReceived, lost: s.packetsLost, audioLevel: s.audioLevel });
-                    }
-                    if (s.type === 'outbound-rtp' && (s.kind === 'audio' || s.mediaType === 'audio')) {
-                        rows.push({ direction: 'outbound', bytes: s.bytesSent, packets: s.packetsSent });
-                    }
-                });
-                console.log('[AUDIO STATS]', p.name, 'state=', pc.connectionState, rows);
-            }
-        };
-
         function toggleMic() {
-            if (!localStream) return;
             micEnabled = !micEnabled;
             localStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
             const btn = document.getElementById('btn-mic');
@@ -708,7 +667,6 @@
         }
 
         function toggleCam() {
-            if (!localStream) return;
             camEnabled = !camEnabled;
             localStream.getVideoTracks().forEach(t => t.enabled = camEnabled);
             const btn = document.getElementById('btn-cam');
