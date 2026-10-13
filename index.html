@@ -463,9 +463,13 @@
                     screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
                     const screenTrack = screenStream.getVideoTracks()[0];
                     Object.values(peers).forEach(p => {
-                        if (p.call) {
-                            const sender = p.call.peerConnection.getSenders().find(s => s.track.kind === 'video');
-                            if (sender) sender.replaceTrack(screenTrack);
+                        if (p.call && p.call.peerConnection) {
+                            const sender = p.call.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+                            if (sender) {
+                                sender.replaceTrack(screenTrack);
+                            } else {
+                                p.call.peerConnection.addTrack(screenTrack, localStream);
+                            }
                         }
                     });
                     const localVideo = document.getElementById('local-video');
