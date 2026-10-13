@@ -552,94 +552,128 @@
         }
 
         peer.on('call', (call) => {
-            const remoteName = call.metadata?.name || 'Аноним';
-            const id = call.peer;
-            const record = ensurePeerRecord(id, remoteName);
+    const remoteName = call.metadata?.name || 'Аноним';
 
-            // Если уже есть активный звонок от этого участника, не создаём второй.
-            if (record.call && record.call !== call) {
-                const oldState = record.call.peerConnection?.connectionState;
-                if (oldState === 'connected' || oldState === 'connecting') {
-                    call.close();
-                    return;
-                }
-                try { record.call.close(); } catch (e) {}
-            }
+    // Отвечаем на входящий звонок своим медиапотоком.
+    call.answer(localStream);
 
-            record.call = call;
-            call.answer(localStream);
-            watchMediaConnection(call, id);
-            handleCall(call, remoteName);
-        });
+    handleCall(call, remoteName);
+});
+        
+function handleCall(call, name) {
+    const id = call.peer;
 
-        function handleCall(call, name) {
-            const id = call.peer;
-            const record = ensurePeerRecord(id, name);
-            record.call = call;
+    if (!peers[id]) {
+        peers[id] = { name };
+    }
 
-            call.on('stream', (remoteStream) => {
-                console.log('Получен медиапоток от:', id, {
-                    audio: remoteStream.getAudioTracks().map(t => ({ enabled: t.enabled, muted: t.muted, readyState: t.readyState })),
-                    video: remoteStream.getVideoTracks().map(t => ({ enabled: t.enabled, muted: t.muted, readyState: t.readyState }))
-                });
+    const peerData = peers[id];
 
-                // При повторном stream используем существующий элемент.
-                let wrapper = record.videoWrapper;
-                let videoEl;
-                if (wrapper) {
-                    videoEl = wrapper.querySelector('video');
-                    if (videoEl) videoEl.srcObject = remoteStream;
-                } else {
-                    wrapper = document.createElement('div');
-                    wrapper.className = 'video-wrapper';
-                    wrapper.innerHTML = `
-                        <h3></h3>
-                        <button class="fullscreen-btn" onclick="this.parentElement.classList.toggle('fullscreen-mode')">
-                            <i class="fas fa-expand"></i>
-                        </button>
-                        <video autoplay playsinline></video>
-                    `;
-                    wrapper.querySelector('h3').innerText = record.name || name || 'Участник';
-                    videoEl = wrapper.querySelector('video');
-                    videoEl.autoplay = true;
-                    videoEl.playsInline = true;
-                    videoEl.muted = false;
-                    videoEl.srcObject = remoteStream;
-                    document.getElementById('video-grid').appendChild(wrapper);
-                    record.videoWrapper = wrapper;
-                }
+    // Если для участника уже есть другой звонок,
+    // освобождаем его видеоблок.
+    if (peerData.call && peerData.call !== call) {
+        const oldCall = peerData.call;
 
-                if (videoEl) {
-                    videoEl.autoplay = true;
-                    videoEl.playsInline = true;
-                    videoEl.muted = false;
-                    videoEl.srcObject = remoteStream;
-                    const tryPlay = () => videoEl.play().catch(err => {
-                        console.warn('Автовоспроизведение потока заблокировано браузером:', id, err);
-                        addSysMsg(`Браузер заблокировал воспроизведение потока ${record.name}. Нажмите на видео или взаимодействуйте со страницей.`);
-                    });
-                    videoEl.onloadedmetadata = tryPlay;
-                    tryPlay();
-                }
-            });
-
-            call.on('close', () => {
-                if (peers[id] && peers[id].call === call) {
-                    peers[id].call = null;
-                    if (peers[id].videoWrapper) {
-                        peers[id].videoWrapper.remove();
-                        peers[id].videoWrapper = null;
-                    }
-                }
-                pendingCalls.delete(id);
-            });
-            call.on('error', err => {
-                console.error('MediaConnection error:', id, err);
-                if (peers[id] && peers[id].call === call) peers[id].call = null;
-                pendingCalls.delete(id);
-            });
+        if (peerData.videoWrapper) {
+            peerData.videoWrapper.remove();
+            peerData.videoWrapper = null;
         }
 
+        peerData.call = null;
+        oldCall.close();
+    }
+
+    peerData.name = name;
+    peerData.call = call;
+
+    const pc = call.peerConnection;
+
+    if (pc) {
+        pc.addEventListener('iceconnectionstatechange', () => {
+            console.log(
+                '[MEDIA ICE]',
+                name,
+                pc.iceConnectionState
+            );
+        });
+
+        pc.addEventListener('connectionstatechange', () => {
+            console.log(
+                '[MEDIA CONNECTION]',
+                name,
+                pc.connectionState
+            );
+        });
+    }
+
+    call.on('stream', (remoteStream) => {
+        console.log(
+            '[MEDIA STREAM]',
+            name,
+            remoteStream.getTracks().map(track => ({
+                kind: track.kind,
+                enabled: track.enabled,
+                muted: track.muted,
+                readyState: track.readyState
+            }))
+        );
+
+        // Игнорируем поток от уже заменённого звонка.
+        if (peerData.call !== call) return;
+
+        if (peerData.videoWrapper) {
+            peerData.videoWrapper.remove();
+            peerData.videoWrapper = null;
+        }
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'video-wrapper';
+
+        wrapper.innerHTML = `
+            <h3></h3>
+            <button class="fullscreen-btn"
+                onclick="this.parentElement.classList.toggle('fullscreen-mode')">
+                <i class="fas fa-expand"></i>
+            </button>
+            <video autoplay playsinline controls></video>
+        `;
+
+        wrapper.querySelector('h3').textContent = peerData.name;
+
+        const videoEl = wrapper.querySelector('video');
+        videoEl.autoplay = true;
+        videoEl.playsInline = true;
+        videoEl.muted = false;
+        videoEl.srcObject = remoteStream;
+
+        document.getElementById('video-grid').appendChild(wrapper);
+        peerData.videoWrapper = wrapper;
+
+        videoEl.play().then(() => {
+            console.log('[PLAY OK]', name);
+        }).catch(err => {
+            console.error('[PLAY ERROR]', name, err.name, err.message);
+        });
+    });
+
+    call.on('close', () => {
+        // Не удаляем участника и его канал чата.
+        if (peerData.call !== call) return;
+
+        peerData.call = null;
+
+        if (peerData.videoWrapper) {
+            peerData.videoWrapper.remove();
+            peerData.videoWrapper = null;
+        }
+
+        console.log('[MEDIA CLOSED]', name);
+    });
+
+    call.on('error', (err) => {
+        console.error('[MEDIA ERROR]', name, err);
+    });
+}
         function removePeer(id) {
             const record = peers[id];
             if (!record) return;
