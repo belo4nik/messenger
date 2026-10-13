@@ -189,6 +189,54 @@
         // Audio Visualizer Context
         let audioCtx, analyser, dataArray;
 
+        // Звуковые эффекты интерфейса: создаются средствами Web Audio API.
+        let uiAudioContext = null;
+        let lastUiSoundAt = 0;
+
+        function playUiSound(kind = 'click') {
+            try {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContextClass) return;
+
+                if (!uiAudioContext) uiAudioContext = new AudioContextClass();
+                if (uiAudioContext.state === 'suspended') {
+                    uiAudioContext.resume().catch(() => {});
+                }
+
+                if (kind === 'click' && Date.now() - lastUiSoundAt < 45) return;
+                lastUiSoundAt = Date.now();
+
+                const now = uiAudioContext.currentTime;
+                const oscillator = uiAudioContext.createOscillator();
+                const gain = uiAudioContext.createGain();
+                oscillator.connect(gain);
+                gain.connect(uiAudioContext.destination);
+
+                const isMessage = kind === 'message';
+                const duration = isMessage ? 0.14 : 0.055;
+                oscillator.type = isMessage ? 'sine' : 'triangle';
+                oscillator.frequency.setValueAtTime(isMessage ? 880 : 620, now);
+                oscillator.frequency.exponentialRampToValueAtTime(isMessage ? 1175 : 480, now + duration);
+
+                gain.gain.setValueAtTime(0.0001, now);
+                gain.gain.exponentialRampToValueAtTime(isMessage ? 0.075 : 0.035, now + 0.008);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+                oscillator.start(now);
+                oscillator.stop(now + duration + 0.01);
+            } catch (err) {
+                console.debug('Звуковой эффект недоступен:', err);
+            }
+        }
+
+        // Короткий звук при нажатии кнопок.
+        document.addEventListener('click', (event) => {
+            const button = event.target.closest('button');
+            if (!button || button.disabled || button.matches('.chat-input button')) return;
+            playUiSound('click');
+        });
+
+
         peer.on('open', (id) => { console.log("My Peer ID:", id); });
 
         async function initMedia() {
@@ -435,6 +483,7 @@ ${err.message}`);
         }
 
         function sendChat() {
+            playUiSound('click');
             const input = document.getElementById('chat-input');
             const msg = input.value.trim();
             if (!msg) return;
@@ -446,6 +495,7 @@ ${err.message}`);
         }
 
         function addChatMsg(sender, msg, type) {
+            if (type === 'other') playUiSound('message');
             const chat = document.getElementById('chat-messages');
             chat.innerHTML += `<div class="msg ${type}">${type === 'other' ? `<div class="sender-name">${sender}</div>` : ''}${msg}</div>`;
             chat.scrollTop = chat.scrollHeight;
