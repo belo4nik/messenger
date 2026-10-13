@@ -188,7 +188,12 @@
             localStorage.setItem('my_p2p_id', myPeerId);
         }
 
-        const peer = new Peer(myPeerId);
+        const peer = new Peer(myPeerId, {
+            host: 'belo4nik-server.duckdns.org',
+            secure: true,
+            port: 443,
+            path: '/myapp'
+        });
         
         let myName = localStorage.getItem('my_p2p_name') || "Гость";
         let isHost = false;
