@@ -9,153 +9,281 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         :root {
-            --bg: #121212;
-            --surface: #1e1e1e;
-            --primary: #bb86fc;
-            --danger: #cf6679;
-            --text: #e0e0e0;
-            --border: #333;
+            --bg: #0d0e15;
+            --surface: rgba(30, 30, 35, 0.6);
+            --primary: #00d2ff;
+            --primary-glow: rgba(0, 210, 255, 0.4);
+            --danger: #ff4b4b;
+            --text: #ffffff;
+            --border: rgba(255, 255, 255, 0.1);
         }
         body { 
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
             background: var(--bg); color: var(--text);
             margin: 0; padding: 0; height: 100vh;
             display: flex; flex-direction: column;
             overflow: hidden;
+            background: linear-gradient(-45deg, #0d0e15, #1a1a2e, #16213e, #0f3460);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
         }
         
+        /* Стили скроллбара */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+
+        /* --- ЭКРАН ВХОДА (GLASSMORPHISM) --- */
         #setup-screen {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: var(--bg); display: flex; align-items: center; justify-content: center;
+            display: flex; align-items: center; justify-content: center;
             z-index: 100;
         }
         .setup-card {
-            background: var(--surface); padding: 40px; border-radius: 16px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 100%; max-width: 400px;
+            background: rgba(25, 25, 30, 0.65);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            padding: 40px; border-radius: 20px;
+            border: 1px solid var(--border);
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5), inset 0 0 20px rgba(255,255,255,0.02);
+            width: 100%; max-width: 420px;
             text-align: center;
+            transform: translateY(0); transition: transform 0.3s ease;
         }
-        .setup-card h1 { margin-top: 0; color: var(--primary); }
+        .setup-card:hover { transform: translateY(-5px); }
+        .setup-card h1 { 
+            margin-top: 0; 
+            background: -webkit-linear-gradient(45deg, #00d2ff, #3a7bd5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 2.2rem;
+            margin-bottom: 5px;
+        }
+        .setup-card p { color: #aaa; margin-bottom: 25px; }
+        
+        .input-group { position: relative; margin: 15px 0; }
+        .input-group i { position: absolute; left: 15px; top: 15px; color: #888; }
         .input-field {
-            width: 100%; padding: 12px; margin: 10px 0;
-            border-radius: 8px; border: 1px solid var(--border);
-            background: #2d2d2d; color: var(--text); box-sizing: border-box;
+            width: 100%; padding: 14px 14px 14px 45px;
+            border-radius: 12px; border: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.3); color: var(--text); 
+            box-sizing: border-box; font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+        .input-field:focus {
+            outline: none; border-color: var(--primary);
+            box-shadow: 0 0 15px var(--primary-glow);
+            background: rgba(0, 0, 0, 0.5);
         }
         .btn-primary {
-            width: 100%; padding: 12px; background: var(--primary); color: #000;
-            border: none; border-radius: 8px; font-weight: bold; cursor: pointer;
-            margin-top: 15px; font-size: 1rem;
+            width: 100%; padding: 14px; 
+            background: linear-gradient(45deg, #00d2ff, #3a7bd5); 
+            color: #fff;
+            border: none; border-radius: 12px; font-weight: bold; cursor: pointer;
+            margin-top: 15px; font-size: 1.1rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 20px rgba(0, 210, 255, 0.2);
         }
-        .btn-primary:hover { opacity: 0.9; }
-        .help-text { font-size: 0.85rem; color: #888; margin-top: 10px; }
+        .btn-primary:hover { 
+            box-shadow: 0 10px 25px rgba(0, 210, 255, 0.4);
+            transform: scale(1.02); 
+        }
+        .help-text { font-size: 0.85rem; color: #888; margin-top: 15px; }
 
-        #main-screen { display: none; flex-direction: column; height: 100%; padding: 20px; box-sizing: border-box; }
+        /* --- ГЛАВНЫЙ ЭКРАН --- */
+        #main-screen { display: none; flex-direction: column; height: 100%; padding: 15px; box-sizing: border-box; gap: 15px; }
         
+        .glass-panel {
+            background: var(--surface);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+        }
+
         .top-bar {
             display: flex; justify-content: space-between; align-items: center;
-            background: var(--surface); padding: 10px 20px; border-radius: 12px;
-            margin-bottom: 15px;
+            padding: 12px 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
-        .room-info { font-family: monospace; background: #2d2d2d; padding: 5px 10px; border-radius: 5px; color: var(--primary); }
+        .room-info { 
+            font-family: monospace; background: rgba(0,0,0,0.4); 
+            padding: 6px 12px; border-radius: 8px; color: var(--primary); 
+            letter-spacing: 1px;
+        }
+        .icon-btn {
+            background: none; border: none; color: var(--primary); 
+            cursor: pointer; padding: 5px; margin-left: 8px; transition: 0.2s;
+        }
+        .icon-btn:hover { color: #fff; transform: scale(1.1); }
         
-        .workspace { display: flex; flex: 1; gap: 20px; overflow: hidden; }
+        .workspace { display: flex; flex: 1; gap: 15px; overflow: hidden; }
         
-        .video-area { flex: 1; display: flex; flex-direction: column; gap: 15px; }
+        .video-area { flex: 1; display: flex; flex-direction: column; gap: 15px; overflow: hidden; }
         .video-grid {
-            flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px; overflow-y: auto; align-content: start;
+            flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 15px; overflow-y: auto; align-content: start; padding-right: 5px;
         }
         
         .video-wrapper {
-            background: #000; border-radius: 12px; overflow: hidden; position: relative; aspect-ratio: 16/9;
+            background: #000; border-radius: 16px; overflow: hidden; position: relative; aspect-ratio: 16/9;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.05);
         }
         .video-wrapper h3 {
-            position: absolute; bottom: 10px; left: 10px; margin: 0;
-            background: rgba(0,0,0,0.7); padding: 5px 10px; border-radius: 6px;
-            font-size: 0.9rem; z-index: 10;
+            position: absolute; bottom: 12px; left: 12px; margin: 0;
+            background: rgba(0,0,0,0.6); backdrop-filter: blur(5px);
+            padding: 6px 12px; border-radius: 8px;
+            font-size: 0.9rem; z-index: 10; border: 1px solid rgba(255,255,255,0.1);
         }
         video { width: 100%; height: 100%; object-fit: cover; }
         video.mirror { transform: scaleX(-1); }
 
-        /* Полноэкранный режим */
         .video-wrapper.fullscreen-mode {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            z-index: 9999; border-radius: 0;
+            z-index: 9999; border-radius: 0; border: none;
         }
         .fullscreen-btn {
-            position: absolute; top: 10px; right: 10px;
-            background: rgba(0,0,0,0.6); color: white; border: none;
-            border-radius: 6px; padding: 8px 12px; cursor: pointer; z-index: 10;
+            position: absolute; top: 12px; right: 12px;
+            background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);
+            color: white; border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px; padding: 8px 12px; cursor: pointer; z-index: 10;
+            transition: 0.2s;
         }
+        .fullscreen-btn:hover { background: rgba(0,0,0,0.8); }
 
+        /* --- ПАНЕЛЬ УПРАВЛЕНИЯ --- */
         .controls-bar {
-            background: var(--surface); padding: 15px; border-radius: 12px;
-            display: flex; justify-content: center; align-items: center; gap: 20px;
+            padding: 15px; display: flex; justify-content: center; align-items: center; gap: 20px;
+            flex-wrap: wrap; flex-shrink: 0; /* Не дает панели сжаться на планшетах */
         }
         
-        .mic-group {
-            display: flex; align-items: center; gap: 15px; background: #2d2d2d; padding: 5px 15px 5px 5px; border-radius: 30px;
+        .control-group {
+            display: flex; align-items: center; gap: 12px; 
+            background: rgba(0,0,0,0.4); padding: 6px 15px 6px 6px; 
+            border-radius: 30px; border: 1px solid rgba(255,255,255,0.05);
         }
         
         .control-btn {
-            width: 50px; height: 50px; border-radius: 50%; border: none;
-            background: #444; color: white; font-size: 1.2rem; cursor: pointer;
-            display: flex; align-items: center; justify-content: center; transition: 0.2s;
+            width: 48px; height: 48px; border-radius: 50%; border: none;
+            background: rgba(255,255,255,0.1); color: white; font-size: 1.1rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; transition: all 0.2s;
         }
-        .control-btn:hover { background: #555; }
-        .control-btn.active { background: var(--primary); color: #000; }
-        .control-btn.danger { background: var(--danger); }
+        .control-btn:hover { background: rgba(255,255,255,0.2); transform: translateY(-2px); }
+        .control-btn.active { background: var(--primary); color: #000; box-shadow: 0 0 15px var(--primary-glow); }
+        .control-btn.danger { background: var(--danger); color: white; }
+        .control-btn.danger:hover { background: #ff6b6b; box-shadow: 0 0 15px rgba(255, 75, 75, 0.4); }
 
-        .visualizer {
-            display: flex; gap: 3px; height: 25px; align-items: center; opacity: 0.3; transition: opacity 0.3s;
-        }
+        /* Эквалайзер */
+        .visualizer { display: flex; gap: 3px; height: 20px; align-items: center; opacity: 0.3; transition: 0.3s; }
         .visualizer.active { opacity: 1; }
-        .visualizer .bar {
-            width: 5px; background: var(--primary); border-radius: 3px; height: 4px; transition: height 0.05s ease;
+        .visualizer .bar { width: 4px; background: var(--primary); border-radius: 2px; height: 4px; transition: height 0.05s ease; }
+
+        /* Ползунок громкости */
+        input[type=range] {
+            -webkit-appearance: none; background: rgba(255,255,255,0.1); 
+            height: 6px; border-radius: 3px; width: 80px; outline: none;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; 
+            background: var(--primary); cursor: pointer; box-shadow: 0 0 10px var(--primary-glow);
         }
 
+        /* --- ЧАТ --- */
         .chat-area {
-            width: 350px; background: var(--surface); border-radius: 12px;
-            display: flex; flex-direction: column; overflow: hidden;
+            width: 320px; display: flex; flex-direction: column; overflow: hidden;
         }
-        .chat-header { padding: 15px; border-bottom: 1px solid var(--border); font-weight: bold; text-align: center; }
-        .chat-messages { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-        .msg { background: #2d2d2d; padding: 10px; border-radius: 10px; max-width: 85%; word-wrap: break-word; }
-        .msg.self { background: var(--primary); color: #000; align-self: flex-end; }
-        .msg.other { align-self: flex-start; }
-        .sender-name { font-size: 0.75rem; opacity: 0.7; margin-bottom: 4px; }
-        .chat-input { padding: 15px; border-top: 1px solid var(--border); display: flex; gap: 10px; }
-        .chat-input input { flex: 1; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: #2d2d2d; color: white; }
-        .chat-input button { background: var(--primary); border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; }
+        .chat-header { 
+            padding: 15px; border-bottom: 1px solid var(--border); 
+            font-weight: bold; text-align: center; letter-spacing: 1px; 
+        }
+        .chat-messages { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+        .msg { 
+            background: rgba(0,0,0,0.4); padding: 10px 14px; border-radius: 12px; 
+            max-width: 85%; word-wrap: break-word; font-size: 0.95rem; line-height: 1.4;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        .msg.self { 
+            background: linear-gradient(45deg, #0f3460, #1a1a2e); 
+            border-color: rgba(0, 210, 255, 0.3);
+            align-self: flex-end; border-bottom-right-radius: 2px;
+        }
+        .msg.other { align-self: flex-start; border-bottom-left-radius: 2px; }
+        .sender-name { font-size: 0.75rem; color: var(--primary); margin-bottom: 5px; font-weight: bold; }
+        
+        .chat-input { padding: 15px; border-top: 1px solid var(--border); display: flex; gap: 10px; background: rgba(0,0,0,0.2); }
+        .chat-input input { 
+            flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--border); 
+            background: rgba(0,0,0,0.5); color: white; outline: none; transition: 0.2s;
+        }
+        .chat-input input:focus { border-color: var(--primary); }
+        .chat-input button { 
+            background: var(--primary); color: #000; border: none; width: 45px; border-radius: 8px; 
+            cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center;
+        }
+        .chat-input button:hover { transform: scale(1.05); box-shadow: 0 0 10px var(--primary-glow); }
+
+        /* --- АДАПТИВНОСТЬ ДЛЯ ПЛАНШЕТОВ И ТЕЛЕФОНОВ --- */
+        @media (max-width: 950px) {
+            .workspace { flex-direction: column; overflow-y: auto; }
+            .video-area { flex: none; height: auto; min-height: 50vh; overflow: visible; }
+            .chat-area { width: 100%; flex: none; height: 400px; }
+            .controls-bar { padding: 10px; gap: 10px; }
+            .video-grid { padding-right: 0; }
+        }
+        @media (max-width: 500px) {
+            .top-bar { flex-direction: column; gap: 10px; text-align: center; }
+            .control-group { padding: 4px 10px 4px 4px; gap: 8px; }
+            .control-btn { width: 42px; height: 42px; }
+            input[type=range] { width: 60px; }
+            .video-grid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
     <div id="setup-screen">
         <div class="setup-card">
-            <h1>P2P Workspace</h1>
-            <p>Присоединяйтесь к комнате или создайте свою</p>
-            <input type="text" id="username" class="input-field" placeholder="Ваше имя (обязательно)">
-            <input type="text" id="host-id" class="input-field" placeholder="ID организатора (оставьте пустым для создания)">
-            <button class="btn-primary" onclick="joinRoom()">Войти в комнату</button>
-            <div class="help-text">Мы запросим доступ к камере, но по умолчанию она будет выключена.</div>
+            <h1><i class="fas fa-satellite-dish"></i> P2P Pro</h1>
+            <p>Защищенное пространство</p>
+            
+            <div class="input-group">
+                <i class="fas fa-user"></i>
+                <input type="text" id="username" class="input-field" placeholder="Как вас зовут?">
+            </div>
+            <div class="input-group">
+                <i class="fas fa-key"></i>
+                <input type="text" id="host-id" class="input-field" placeholder="Код комнаты (пусто = создать)">
+            </div>
+            
+            <button class="btn-primary" onclick="joinRoom()">
+                <i class="fas fa-sign-in-alt"></i> Войти в эфир
+            </button>
+            <div class="help-text">Камера и микрофон выключены по умолчанию.</div>
         </div>
     </div>
     
     <div id="main-screen">
-        <div class="top-bar">
+        <div class="top-bar glass-panel">
             <div>
-                <strong>Ваше имя:</strong> <span id="ui-username"></span>
-                <button onclick="changeName()" style="background:none;border:none;color:var(--primary);cursor:pointer;margin-left:5px;" title="Изменить имя">
-                    <i class="fas fa-edit"></i>
+                <i class="fas fa-user-circle" style="color:var(--primary); margin-right:5px;"></i>
+                <strong id="ui-username"></strong>
+                <button class="icon-btn" onclick="changeName()" title="Изменить имя">
+                    <i class="fas fa-pen"></i>
                 </button>
             </div>
             <div>
-                <strong>Код комнаты:</strong> 
+                <span style="color:#aaa; font-size: 0.9rem;">Комната:</span> 
                 <span class="room-info" id="ui-room-id">Загрузка...</span>
-                <button onclick="copyInviteLink()" style="background:none;border:none;color:var(--primary);cursor:pointer;margin-left:5px;" title="Скопировать ссылку-приглашение">
-                    <i class="fas fa-link"></i> Ссылка
+                <button class="icon-btn" onclick="copyInviteLink()" title="Скопировать ссылку">
+                    <i class="fas fa-copy"></i>
                 </button>
             </div>
         </div>
+        
         <div class="workspace">
             <div class="video-area">
                 <div class="video-grid" id="video-grid">
@@ -167,8 +295,10 @@
                         <video id="local-video" autoplay muted playsinline class="mirror"></video>
                     </div>
                 </div>
-                <div class="controls-bar">
-                    <div class="mic-group">
+                
+                <div class="controls-bar glass-panel">
+                    <!-- Микрофон -->
+                    <div class="control-group">
                         <button class="control-btn danger" id="btn-mic" onclick="toggleMic()" title="Микрофон">
                             <i class="fas fa-microphone-slash"></i>
                         </button>
@@ -176,19 +306,32 @@
                             <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
                         </div>
                     </div>
+                    
+                    <!-- Камера -->
                     <button class="control-btn danger" id="btn-cam" onclick="toggleCam()" title="Камера">
                         <i class="fas fa-video-slash"></i>
                     </button>
+                    
+                    <!-- Демонстрация экрана -->
                     <button class="control-btn" id="btn-screen" onclick="toggleScreen()" title="Демонстрация экрана">
                         <i class="fas fa-desktop"></i>
                     </button>
+
+                    <!-- Общая громкость входящего звука -->
+                    <div class="control-group">
+                        <button class="control-btn active" id="btn-volume" onclick="toggleMute()" title="Входящий звук">
+                            <i class="fas fa-volume-up"></i>
+                        </button>
+                        <input type="range" id="volume-slider" min="0" max="1" step="0.05" value="1" oninput="changeVolume(this.value)">
+                    </div>
                 </div>
             </div>
-            <div class="chat-area">
-                <div class="chat-header">Чат комнаты</div>
+            
+            <div class="chat-area glass-panel">
+                <div class="chat-header"><i class="far fa-comments"></i> Чат</div>
                 <div class="chat-messages" id="chat-messages"></div>
                 <div class="chat-input">
-                    <input type="text" id="chat-input" placeholder="Сообщение..." onkeypress="if(event.key === 'Enter') sendChat()">
+                    <input type="text" id="chat-input" placeholder="Написать..." onkeypress="if(event.key === 'Enter') sendChat()">
                     <button onclick="sendChat()"><i class="fas fa-paper-plane"></i></button>
                 </div>
             </div>
@@ -196,7 +339,7 @@
     </div>
 
     <script>
-        // 1. Инициализация постоянного ID
+        // Инициализация ID
         let myPeerId = localStorage.getItem('my_p2p_id');
         if (!myPeerId) {
             myPeerId = 'user_' + Math.random().toString(36).substr(2, 6);
@@ -210,22 +353,20 @@
             path: '/myapp',
             config: {
                 'iceServers': [
-                    // Ваш личный STUN
                     { urls: 'stun:belo4nik-server.duckdns.org:3478' },
-                    // Ваш личный TURN
                     {
                         urls: [
                             'turn:belo4nik-server.duckdns.org:3478',
                             'turn:belo4nik-server.duckdns.org:3478?transport=tcp'
                         ],
                         username: 'myuser', 
-                        credential: 'ad2tmi6e' 
+                        credential: 'superpassword123'
                     }
                 ]
             }
         });
         
-        let myName = localStorage.getItem('my_p2p_name') || "Гость";
+        let myName = localStorage.getItem('my_p2p_name') || "";
         let isHost = false;
         let actualHostId = null;
         let localStream = null;
@@ -235,63 +376,97 @@
         let isScreenSharing = false;
         const peers = {};
 
+        // Глобальная громкость (для входящих потоков)
+        let globalVolume = 1;
+        let isMuted = false;
+
         let audioCtx, analyser, dataArray;
         let uiAudioContext = null;
         let lastUiSoundAt = 0;
-        let wakeLock = null; // Для запрета засыпания экрана
+        let wakeLock = null;
 
-        // Автозаполнение имени из кеша
-        if (localStorage.getItem('my_p2p_name')) {
-            document.getElementById('username').value = localStorage.getItem('my_p2p_name');
-        }
+        if (myName) document.getElementById('username').value = myName;
 
-        // Автозаполнение ID комнаты
         const urlParams = new URLSearchParams(window.location.search);
         const roomFromUrl = urlParams.get('room');
-        if (roomFromUrl) {
-            document.getElementById('host-id').value = roomFromUrl;
-        }
+        if (roomFromUrl) document.getElementById('host-id').value = roomFromUrl;
 
         peer.on('disconnected', () => {
-            console.log('Связь с сервером потеряна. Переподключение...');
             addSysMsg('Потеряна связь с сервером сигналов. Восстанавливаем...');
             peer.reconnect();
         });
 
         peer.on('error', (err) => {
             console.error('PeerJS Ошибка:', err);
-            if (err.type === 'peer-unavailable') {
-                addSysMsg('Ошибка: Собеседник недоступен или уже отключился.');
-            }
+            if (err.type === 'peer-unavailable') addSysMsg('Ошибка: Собеседник недоступен.');
         });
 
+        // --- Управление громкостью ---
+        function changeVolume(val) {
+            globalVolume = parseFloat(val);
+            isMuted = globalVolume === 0;
+            updateVolumeUI();
+            applyVolumeToAll();
+        }
+
+        function toggleMute() {
+            isMuted = !isMuted;
+            if (isMuted) {
+                document.getElementById('volume-slider').value = 0;
+            } else {
+                if (globalVolume === 0) globalVolume = 1;
+                document.getElementById('volume-slider').value = globalVolume;
+            }
+            updateVolumeUI();
+            applyVolumeToAll();
+        }
+
+        function updateVolumeUI() {
+            const btn = document.getElementById('btn-volume');
+            if (isMuted || globalVolume === 0) {
+                btn.innerHTML = '<i class="fas fa-volume-mute"></i>';
+                btn.className = 'control-btn danger';
+            } else {
+                btn.innerHTML = globalVolume < 0.5 ? '<i class="fas fa-volume-down"></i>' : '<i class="fas fa-volume-up"></i>';
+                btn.className = 'control-btn active';
+            }
+        }
+
+        function applyVolumeToAll() {
+            const actualVol = isMuted ? 0 : globalVolume;
+            Object.values(peers).forEach(p => {
+                if (p.videoWrapper) {
+                    const vid = p.videoWrapper.querySelector('video');
+                    if (vid) vid.volume = actualVol;
+                }
+            });
+        }
+
+        // --- UI Звуки ---
         function playUiSound(kind = 'click') {
             try {
                 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
                 if (!AudioContextClass) return;
-
                 if (!uiAudioContext) uiAudioContext = new AudioContextClass();
                 if (uiAudioContext.state === 'suspended') uiAudioContext.resume().catch(() => {});
-
                 if (kind === 'click' && Date.now() - lastUiSoundAt < 45) return;
                 lastUiSoundAt = Date.now();
-
                 const now = uiAudioContext.currentTime;
                 const oscillator = uiAudioContext.createOscillator();
                 const gain = uiAudioContext.createGain();
                 oscillator.connect(gain);
                 gain.connect(uiAudioContext.destination);
-
                 const isMessage = kind === 'message';
                 const duration = isMessage ? 0.14 : 0.055;
                 oscillator.type = isMessage ? 'sine' : 'triangle';
                 oscillator.frequency.setValueAtTime(isMessage ? 880 : 620, now);
                 oscillator.frequency.exponentialRampToValueAtTime(isMessage ? 1175 : 480, now + duration);
-
+                
+                // Звук UI не должен бить по ушам
+                const targetGain = isMessage ? 0.04 : 0.02;
                 gain.gain.setValueAtTime(0.0001, now);
-                gain.gain.exponentialRampToValueAtTime(isMessage ? 0.075 : 0.035, now + 0.008);
+                gain.gain.exponentialRampToValueAtTime(targetGain, now + 0.008);
                 gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-
                 oscillator.start(now);
                 oscillator.stop(now + duration + 0.01);
             } catch (err) {}
@@ -303,20 +478,17 @@
             playUiSound('click');
         });
 
+        // --- Медиа и инициализация ---
         async function initMedia() {
             try {
                 if ('wakeLock' in navigator) {
                     wakeLock = await navigator.wakeLock.request('screen');
-                    console.log('Экран не погаснет');
                 }
-            } catch (err) {
-                console.warn('Wake Lock не поддерживается', err);
-            }
+            } catch (err) {}
 
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
                 localStream.getAudioTracks().forEach(track => { track.enabled = false; });
-
                 try {
                     const videoStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
                     videoStream.getVideoTracks().forEach(track => {
@@ -324,7 +496,7 @@
                         localStream.addTrack(track);
                     });
                 } catch (cameraError) {
-                    console.warn("Камера недоступна:", cameraError.message);
+                    console.warn("Камера недоступна");
                 }
 
                 document.getElementById('local-video').srcObject = localStream;
@@ -357,7 +529,7 @@
             const step = Math.floor(dataArray.length / 10);
             for (let i = 0; i < 5; i++) {
                 const value = dataArray[i * step];
-                bars[i].style.height = Math.max(4, (value / 255) * 25) + 'px';
+                bars[i].style.height = Math.max(4, (value / 255) * 20) + 'px';
             }
         }
 
@@ -379,7 +551,7 @@
                 isHost = true;
                 actualHostId = peer.id;
                 document.getElementById('ui-room-id').innerText = peer.id;
-                addSysMsg('Вы создали комнату. Скопируйте ссылку-приглашение выше и отправьте участникам.');
+                addSysMsg('Комната создана. Скопируйте ссылку и отправьте участникам.');
             } else {
                 isHost = false;
                 actualHostId = hostInput;
@@ -392,22 +564,20 @@
         function changeName() {
             const newName = prompt("Введите новое имя:", myName);
             if (newName && newName.trim() !== "" && newName !== myName) {
-                const oldName = myName;
                 myName = newName.trim();
                 localStorage.setItem('my_p2p_name', myName);
                 document.getElementById('ui-username').innerText = myName;
-                
                 Object.values(peers).forEach(p => {
                     if (p.conn && p.conn.open) p.conn.send({ type: 'name_change', name: myName });
                 });
-                addSysMsg(`Вы сменили имя на ${myName}.`);
+                addSysMsg(`Имя изменено на ${myName}.`);
             }
         }
 
+        // --- P2P Логика ---
         peer.on('connection', (conn) => {
             const remoteName = conn.metadata?.name || 'Аноним';
             const id = conn.peer;
-
             if (peers[id]) removePeer(id);
 
             conn.on('open', () => {
@@ -439,13 +609,12 @@
             peers[id].conn = conn;
             peers[id].name = remoteName;
             
-            addSysMsg(`${remoteName} присоединился(ась).`);
+            addSysMsg(`${remoteName} в сети.`);
 
             conn.peerConnection.addEventListener('iceconnectionstatechange', () => {
                 const state = conn.peerConnection.iceConnectionState;
-                if (state === 'connected') addSysMsg(`✅ P2P канал с ${remoteName} установлен`);
-                if (state === 'disconnected') addSysMsg(`⚠️ Связь с ${remoteName} нестабильна...`);
-                if (state === 'failed') addSysMsg(`❌ P2P соединение с ${remoteName} разорвано`);
+                if (state === 'connected') addSysMsg(`✅ P2P с ${remoteName} установлен`);
+                if (state === 'failed') addSysMsg(`❌ Связь с ${remoteName} потеряна`);
             });
 
             conn.on('data', (data) => {
@@ -472,11 +641,9 @@
         peer.on('call', (call) => {
             const remoteName = call.metadata?.name || 'Аноним';
             const id = call.peer;
-            
             if (peers[id] && peers[id].call) {
                 if (peers[id].videoWrapper) peers[id].videoWrapper.remove();
             }
-
             call.answer(localStream);
             handleCall(call, remoteName);
         });
@@ -491,7 +658,6 @@
                 
                 const wrapper = document.createElement('div');
                 wrapper.className = 'video-wrapper';
-                
                 wrapper.innerHTML = `
                     <h3>${peers[id].name}</h3>
                     <button class="fullscreen-btn" onclick="this.parentElement.classList.toggle('fullscreen-mode')">
@@ -502,10 +668,12 @@
                 
                 const videoEl = wrapper.querySelector('video');
                 videoEl.srcObject = remoteStream;
+                videoEl.volume = isMuted ? 0 : globalVolume; // Применяем текущую громкость
+
                 document.getElementById('video-grid').appendChild(wrapper);
                 peers[id].videoWrapper = wrapper;
 
-                videoEl.play().catch(err => console.log("Автоплей заблокирован браузером:", err));
+                videoEl.play().catch(e => console.log("Автоплей заблокирован", e));
             });
 
             call.on('close', () => removePeer(id));
@@ -517,12 +685,12 @@
                 if (peers[id].videoWrapper) peers[id].videoWrapper.remove();
                 if (peers[id].conn) peers[id].conn.close();
                 if (peers[id].call) peers[id].call.close();
-                
-                addSysMsg(`${peers[id].name} покинул(а) комнату.`);
+                addSysMsg(`${peers[id].name} вышел(ла).`);
                 delete peers[id];
             }
         }
 
+        // --- Управление устройствами ---
         function toggleMic() {
             micEnabled = !micEnabled;
             localStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
@@ -557,11 +725,8 @@
                     Object.values(peers).forEach(p => {
                         if (p.call && p.call.peerConnection) {
                             const sender = p.call.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-                            if (sender) {
-                                sender.replaceTrack(screenTrack);
-                            } else {
-                                p.call.peerConnection.addTrack(screenTrack, localStream);
-                            }
+                            if (sender) sender.replaceTrack(screenTrack);
+                            else p.call.peerConnection.addTrack(screenTrack, localStream);
                         }
                     });
                     const localVideo = document.getElementById('local-video');
@@ -580,11 +745,8 @@
                 if (p.call && p.call.peerConnection) {
                     const sender = p.call.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
                     if (sender) {
-                        if (camTrack) {
-                            sender.replaceTrack(camTrack);
-                        } else {
-                            p.call.peerConnection.removeTrack(sender);
-                        }
+                        if (camTrack) sender.replaceTrack(camTrack);
+                        else p.call.peerConnection.removeTrack(sender);
                     }
                 }
             });
@@ -599,6 +761,7 @@
             document.getElementById('btn-screen').classList.remove('active');
         }
 
+        // --- Чат ---
         function sendChat() {
             playUiSound('click');
             const input = document.getElementById('chat-input');
@@ -620,14 +783,14 @@
 
         function addSysMsg(msg) {
             const chat = document.getElementById('chat-messages');
-            chat.innerHTML += `<div style="text-align:center; color:#888; font-size:0.8rem; margin:5px 0;">${msg}</div>`;
+            chat.innerHTML += `<div style="text-align:center; color:rgba(255,255,255,0.4); font-size:0.8rem; margin:5px 0;">${msg}</div>`;
             chat.scrollTop = chat.scrollHeight;
         }
 
         function copyInviteLink() {
             const url = window.location.origin + window.location.pathname + '?room=' + actualHostId;
             navigator.clipboard.writeText(url);
-            addSysMsg("Ссылка-приглашение скопирована! Отправьте её коллегам.");
+            addSysMsg("Ссылка скопирована!");
         }
     </script>
 </body>
