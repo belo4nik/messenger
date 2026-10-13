@@ -64,6 +64,7 @@
             flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 15px; overflow-y: auto; align-content: start;
         }
+        
         .video-wrapper {
             background: #000; border-radius: 12px; overflow: hidden; position: relative; aspect-ratio: 16/9;
         }
@@ -74,6 +75,17 @@
         }
         video { width: 100%; height: 100%; object-fit: cover; }
         video.mirror { transform: scaleX(-1); }
+
+        /* Полноэкранный режим */
+        .video-wrapper.fullscreen-mode {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 9999; border-radius: 0;
+        }
+        .fullscreen-btn {
+            position: absolute; top: 10px; right: 10px;
+            background: rgba(0,0,0,0.6); color: white; border: none;
+            border-radius: 6px; padding: 8px 12px; cursor: pointer; z-index: 10;
+        }
 
         .controls-bar {
             background: var(--surface); padding: 15px; border-radius: 12px;
@@ -149,6 +161,9 @@
                 <div class="video-grid" id="video-grid">
                     <div class="video-wrapper">
                         <h3 id="local-video-title">Вы (Локально)</h3>
+                        <button class="fullscreen-btn" onclick="this.parentElement.classList.toggle('fullscreen-mode')">
+                            <i class="fas fa-expand"></i>
+                        </button>
                         <video id="local-video" autoplay muted playsinline class="mirror"></video>
                     </div>
                 </div>
@@ -214,13 +229,14 @@
         let audioCtx, analyser, dataArray;
         let uiAudioContext = null;
         let lastUiSoundAt = 0;
+        let wakeLock = null; // Для запрета засыпания экрана
 
         // Автозаполнение имени из кеша
         if (localStorage.getItem('my_p2p_name')) {
             document.getElementById('username').value = localStorage.getItem('my_p2p_name');
         }
 
-        // Автозаполнение ID комнаты, если зашли по ссылке-приглашению
+        // Автозаполнение ID комнаты
         const urlParams = new URLSearchParams(window.location.search);
         const roomFromUrl = urlParams.get('room');
         if (roomFromUrl) {
@@ -279,6 +295,15 @@
         });
 
         async function initMedia() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    console.log('Экран не погаснет');
+                }
+            } catch (err) {
+                console.warn('Wake Lock не поддерживается', err);
+            }
+
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
                 localStream.getAudioTracks().forEach(track => { track.enabled = false; });
@@ -351,13 +376,10 @@
                 actualHostId = hostInput;
                 document.getElementById('ui-room-id').innerText = hostInput;
                 connectToPeer(hostInput);
-                
-                // Очищаем URL, чтобы при перезагрузке ссылка была чистой
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
         }
 
-        // Функция смены имени
         function changeName() {
             const newName = prompt("Введите новое имя:", myName);
             if (newName && newName.trim() !== "" && newName !== myName) {
@@ -366,7 +388,6 @@
                 localStorage.setItem('my_p2p_name', myName);
                 document.getElementById('ui-username').innerText = myName;
                 
-                // Рассылаем новое имя всем участникам
                 Object.values(peers).forEach(p => {
                     if (p.conn && p.conn.open) p.conn.send({ type: 'name_change', name: myName });
                 });
@@ -411,12 +432,18 @@
             
             addSysMsg(`${remoteName} присоединился(ась).`);
 
+            conn.peerConnection.addEventListener('iceconnectionstatechange', () => {
+                const state = conn.peerConnection.iceConnectionState;
+                if (state === 'connected') addSysMsg(`✅ P2P канал с ${remoteName} установлен`);
+                if (state === 'disconnected') addSysMsg(`⚠️ Связь с ${remoteName} нестабильна...`);
+                if (state === 'failed') addSysMsg(`❌ P2P соединение с ${remoteName} разорвано`);
+            });
+
             conn.on('data', (data) => {
                 if (typeof data === 'object') {
                     if (data.type === 'room_state' && !isHost) {
                         data.peers.forEach(p => { connectToPeer(p.id, p.name); });
                     } else if (data.type === 'name_change') {
-                        // Обработка смены имени собеседника
                         const oldName = peers[id].name;
                         peers[id].name = data.name;
                         if (peers[id].videoWrapper) {
@@ -427,12 +454,6 @@
                 } else {
                     addChatMsg(peers[id].name, data, 'other');
                 }
-                conn.peerConnection.addEventListener('iceconnectionstatechange', () => {
-                const state = conn.peerConnection.iceConnectionState;
-                if (state === 'connected') addSysMsg(`✅ P2P канал с ${remoteName} установлен`);
-                if (state === 'disconnected') addSysMsg(`⚠️ Связь с ${remoteName} нестабильна...`);
-                if (state === 'failed') addSysMsg(`❌ P2P соединение с ${remoteName} разорвано`);
-            });
             });
 
             conn.on('close', () => removePeer(id));
@@ -458,12 +479,24 @@
             
             call.on('stream', (remoteStream) => {
                 if (peers[id].videoWrapper) return;
+                
                 const wrapper = document.createElement('div');
                 wrapper.className = 'video-wrapper';
-                wrapper.innerHTML = `<h3>${peers[id].name}</h3><video autoplay playsinline></video>`;
-                wrapper.querySelector('video').srcObject = remoteStream;
+                
+                wrapper.innerHTML = `
+                    <h3>${peers[id].name}</h3>
+                    <button class="fullscreen-btn" onclick="this.parentElement.classList.toggle('fullscreen-mode')">
+                        <i class="fas fa-expand"></i>
+                    </button>
+                    <video playsinline></video>
+                `;
+                
+                const videoEl = wrapper.querySelector('video');
+                videoEl.srcObject = remoteStream;
                 document.getElementById('video-grid').appendChild(wrapper);
                 peers[id].videoWrapper = wrapper;
+
+                videoEl.play().catch(err => console.log("Автоплей заблокирован браузером:", err));
             });
 
             call.on('close', () => removePeer(id));
