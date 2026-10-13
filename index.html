@@ -175,8 +175,18 @@
         </div>
     </div>
     <script>
-        const peer = new Peer();
-        let myName = "Гость";
+        // 1. Инициализация постоянного ID
+        let myPeerId = localStorage.getItem('my_p2p_id');
+        if (!myPeerId) {
+            // Генерируем уникальный ID при первом запуске (например: user_abc123)
+            myPeerId = 'user_' + Math.random().toString(36).substr(2, 6);
+            localStorage.setItem('my_p2p_id', myPeerId);
+        }
+
+        // Запускаем PeerJS с фиксированным ID
+        const peer = new Peer(myPeerId);
+        
+        let myName = localStorage.getItem('my_p2p_name') || "Гость";
         let isHost = false;
         let actualHostId = null;
         let localStream = null;
@@ -188,10 +198,27 @@
 
         // Audio Visualizer Context
         let audioCtx, analyser, dataArray;
-
-        // Звуковые эффекты интерфейса: создаются средствами Web Audio API.
         let uiAudioContext = null;
         let lastUiSoundAt = 0;
+
+        // Восстановление имени в интерфейсе
+        if (localStorage.getItem('my_p2p_name')) {
+            document.getElementById('username').value = localStorage.getItem('my_p2p_name');
+        }
+
+        // Автоматическое переподключение к серверу PeerJS при обрыве связи
+        peer.on('disconnected', () => {
+            console.log('Связь с сервером потеряна. Переподключение...');
+            addSysMsg('Потеряна связь с сервером сигналов. Восстанавливаем...');
+            peer.reconnect();
+        });
+
+        peer.on('error', (err) => {
+            console.error('PeerJS Ошибка:', err);
+            if (err.type === 'peer-unavailable') {
+                addSysMsg('Ошибка: Собеседник недоступен или уже отключился.');
+            }
+        });
 
         function playUiSound(kind = 'click') {
             try {
@@ -229,60 +256,34 @@
             }
         }
 
-        // Короткий звук при нажатии кнопок.
         document.addEventListener('click', (event) => {
             const button = event.target.closest('button');
             if (!button || button.disabled || button.matches('.chat-input button')) return;
             playUiSound('click');
         });
 
-
-        peer.on('open', (id) => { console.log("My Peer ID:", id); });
+        peer.on('open', (id) => { console.log("Мой постоянный Peer ID:", id); });
 
         async function initMedia() {
-            // Получаем микрофон отдельно: ошибка камеры не должна отключать звук.
             try {
-                localStream = await navigator.mediaDevices.getUserMedia({
-                    audio: true,
-                    video: false
-                });
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                localStream.getAudioTracks().forEach(track => { track.enabled = false; });
 
-                localStream.getAudioTracks().forEach(track => {
-                    track.enabled = false;
-                });
-
-                // Камера необязательна. Если она недоступна, продолжаем только с микрофоном.
                 try {
-                    const videoStream = await navigator.mediaDevices.getUserMedia({
-                        audio: false,
-                        video: true
-                    });
-
+                    const videoStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
                     videoStream.getVideoTracks().forEach(track => {
                         track.enabled = false;
                         localStream.addTrack(track);
                     });
                 } catch (cameraError) {
-                    console.warn(
-                        "Камера недоступна:",
-                        cameraError.name,
-                        cameraError.message
-                    );
+                    console.warn("Камера недоступна:", cameraError.message);
                 }
 
                 document.getElementById('local-video').srcObject = localStream;
                 initVisualizer(localStream);
-
-                console.log("Микрофон получен:", localStream.getAudioTracks());
                 return true;
             } catch (err) {
-                console.error(
-                    "Ошибка получения микрофона:",
-                    err.name,
-                    err.message
-                );
-                alert(`Не удалось получить микрофон: ${err.name}
-${err.message}`);
+                alert(`Не удалось получить микрофон: ${err.message}`);
                 return false;
             }
         }
@@ -295,35 +296,32 @@ ${err.message}`);
             analyser.fftSize = 256;
             const bufferLength = analyser.frequencyBinCount;
             dataArray = new Uint8Array(bufferLength);
-            
             drawVisualizer();
         }
 
         function drawVisualizer() {
             requestAnimationFrame(drawVisualizer);
-            
             const bars = document.querySelectorAll('.visualizer .bar');
             if (!micEnabled) {
                 bars.forEach(bar => bar.style.height = '4px');
                 return;
             }
-
             analyser.getByteFrequencyData(dataArray);
-            
-            // Берем 5 выборок из частот для 5 полосок
             const step = Math.floor(dataArray.length / 10);
             for (let i = 0; i < 5; i++) {
                 const value = dataArray[i * step];
-                const height = Math.max(4, (value / 255) * 25); // от 4px до 25px
+                const height = Math.max(4, (value / 255) * 25);
                 bars[i].style.height = height + 'px';
             }
         }
 
         async function joinRoom() {
             const nameInput = document.getElementById('username').value.trim();
-            const hostInput = document.getElementById('host-id').value.trim();
+            let hostInput = document.getElementById('host-id').value.trim();
             if (!nameInput) return alert('Пожалуйста, введите ваше имя!');
+            
             myName = nameInput;
+            localStorage.setItem('my_p2p_name', myName); // Запоминаем имя
             
             if (!(await initMedia())) return;
 
@@ -335,7 +333,7 @@ ${err.message}`);
                 isHost = true;
                 actualHostId = peer.id;
                 document.getElementById('ui-room-id').innerText = peer.id;
-                addSysMsg('Вы создали комнату. Отправьте ваш ID комнаты другим участникам.');
+                addSysMsg('Вы создали комнату. Ваш постоянный ID скопируйте выше и отправьте участникам.');
             } else {
                 isHost = false;
                 actualHostId = hostInput;
@@ -346,17 +344,28 @@ ${err.message}`);
 
         peer.on('connection', (conn) => {
             const remoteName = conn.metadata?.name || 'Аноним';
+            const id = conn.peer;
+
+            // Очистка зависшей сессии, если участник переподключился с тем же ID
+            if (peers[id]) removePeer(id);
+
             conn.on('open', () => {
                 setupConnectionData(conn, remoteName);
                 if (isHost) {
-                    const existingPeers = Object.keys(peers).map(id => ({ id, name: peers[id].name }));
+                    const existingPeers = Object.keys(peers)
+                        .filter(pId => pId !== id) // Не отправляем участнику его самого
+                        .map(pId => ({ id: pId, name: peers[pId].name }));
                     conn.send({ type: 'room_state', peers: existingPeers });
                 }
             });
         });
 
         function connectToPeer(targetId, targetName = "Ожидание...") {
-            if (targetId === peer.id || peers[targetId]) return;
+            if (targetId === peer.id) return; 
+            
+            // Если соединение уже есть, не дублируем
+            if (peers[targetId] && peers[targetId].conn && peers[targetId].conn.open) return;
+
             const conn = peer.connect(targetId, { metadata: { name: myName } });
             if (localStream) {
                 const call = peer.call(targetId, localStream, { metadata: { name: myName } });
@@ -370,7 +379,8 @@ ${err.message}`);
             if (!peers[id]) peers[id] = { name: remoteName };
             peers[id].conn = conn;
             peers[id].name = remoteName;
-            addSysMsg(`${remoteName} в сети.`);
+            
+            addSysMsg(`${remoteName} присоединился(ась).`);
 
             conn.on('data', (data) => {
                 if (typeof data === 'object') {
@@ -381,12 +391,24 @@ ${err.message}`);
                     addChatMsg(peers[id].name, data, 'other');
                 }
             });
+
+            // Корректная обработка отключений
             conn.on('close', () => removePeer(id));
             conn.on('error', () => removePeer(id));
+            
+            // Периодический пинг можно реализовать здесь, если закрытие не срабатывает, 
+            // но WebRTC 'close' обычно обрабатывается PeerJS надежно.
         }
 
         peer.on('call', (call) => {
             const remoteName = call.metadata?.name || 'Аноним';
+            const id = call.peer;
+            
+            // Очищаем старое видео, если участник перезванивает
+            if (peers[id] && peers[id].call) {
+                if (peers[id].videoWrapper) peers[id].videoWrapper.remove();
+            }
+
             call.answer(localStream);
             handleCall(call, remoteName);
         });
@@ -395,6 +417,7 @@ ${err.message}`);
             const id = call.peer;
             if (!peers[id]) peers[id] = { name: name };
             peers[id].call = call;
+            
             call.on('stream', (remoteStream) => {
                 if (peers[id].videoWrapper) return;
                 const wrapper = document.createElement('div');
@@ -404,6 +427,7 @@ ${err.message}`);
                 document.getElementById('video-grid').appendChild(wrapper);
                 peers[id].videoWrapper = wrapper;
             });
+
             call.on('close', () => removePeer(id));
             call.on('error', () => removePeer(id));
         }
@@ -411,7 +435,10 @@ ${err.message}`);
         function removePeer(id) {
             if (peers[id]) {
                 if (peers[id].videoWrapper) peers[id].videoWrapper.remove();
-                addSysMsg(`${peers[id].name} покинул комнату.`);
+                if (peers[id].conn) peers[id].conn.close();
+                if (peers[id].call) peers[id].call.close();
+                
+                addSysMsg(`${peers[id].name} покинул(а) комнату.`);
                 delete peers[id];
             }
         }
@@ -459,7 +486,7 @@ ${err.message}`);
                     isScreenSharing = true;
                     btn.classList.add('active');
                     screenTrack.onended = stopScreenSharing;
-                } catch (e) { console.error("Screen sharing failed", e); }
+                } catch (e) { console.error("Ошибка демонстрации экрана", e); }
             } else { stopScreenSharing(); }
         }
 
@@ -468,7 +495,7 @@ ${err.message}`);
             Object.values(peers).forEach(p => {
                 if (p.call) {
                     const sender = p.call.peerConnection.getSenders().find(s => s.track.kind === 'video');
-                    if (sender) sender.replaceTrack(camTrack);
+                    if (sender && camTrack) sender.replaceTrack(camTrack);
                 }
             });
             const localVideo = document.getElementById('local-video');
