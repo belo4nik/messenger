@@ -192,17 +192,50 @@
         peer.on('open', (id) => { console.log("My Peer ID:", id); });
 
         async function initMedia() {
+            // Получаем микрофон отдельно: ошибка камеры не должна отключать звук.
             try {
-                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                localStream.getAudioTracks().forEach(t => t.enabled = false);
-                localStream.getVideoTracks().forEach(t => t.enabled = false);
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: false
+                });
+
+                localStream.getAudioTracks().forEach(track => {
+                    track.enabled = false;
+                });
+
+                // Камера необязательна. Если она недоступна, продолжаем только с микрофоном.
+                try {
+                    const videoStream = await navigator.mediaDevices.getUserMedia({
+                        audio: false,
+                        video: true
+                    });
+
+                    videoStream.getVideoTracks().forEach(track => {
+                        track.enabled = false;
+                        localStream.addTrack(track);
+                    });
+                } catch (cameraError) {
+                    console.warn(
+                        "Камера недоступна:",
+                        cameraError.name,
+                        cameraError.message
+                    );
+                }
+
                 document.getElementById('local-video').srcObject = localStream;
-                
                 initVisualizer(localStream);
+
+                console.log("Микрофон получен:", localStream.getAudioTracks());
+                return true;
             } catch (err) {
-                alert("Ошибка доступа к камере/микрофону.");
-                const canvas = document.createElement('canvas');
-                localStream = canvas.captureStream(1);
+                console.error(
+                    "Ошибка получения микрофона:",
+                    err.name,
+                    err.message
+                );
+                alert(`Не удалось получить микрофон: ${err.name}
+${err.message}`);
+                return false;
             }
         }
 
@@ -244,7 +277,7 @@
             if (!nameInput) return alert('Пожалуйста, введите ваше имя!');
             myName = nameInput;
             
-            await initMedia();
+            if (!(await initMedia())) return;
 
             document.getElementById('setup-screen').style.display = 'none';
             document.getElementById('main-screen').style.display = 'flex';
