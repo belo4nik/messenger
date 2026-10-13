@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>P2P Workspace Pro</title>
+    <link rel="icon" type="image/png" href="favicon.png">
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -178,12 +179,10 @@
         // 1. Инициализация постоянного ID
         let myPeerId = localStorage.getItem('my_p2p_id');
         if (!myPeerId) {
-            // Генерируем уникальный ID при первом запуске (например: user_abc123)
             myPeerId = 'user_' + Math.random().toString(36).substr(2, 6);
             localStorage.setItem('my_p2p_id', myPeerId);
         }
 
-        // Запускаем PeerJS с фиксированным ID
         const peer = new Peer(myPeerId);
         
         let myName = localStorage.getItem('my_p2p_name') || "Гость";
@@ -196,17 +195,14 @@
         let isScreenSharing = false;
         const peers = {};
 
-        // Audio Visualizer Context
         let audioCtx, analyser, dataArray;
         let uiAudioContext = null;
         let lastUiSoundAt = 0;
 
-        // Восстановление имени в интерфейсе
         if (localStorage.getItem('my_p2p_name')) {
             document.getElementById('username').value = localStorage.getItem('my_p2p_name');
         }
 
-        // Автоматическое переподключение к серверу PeerJS при обрыве связи
         peer.on('disconnected', () => {
             console.log('Связь с сервером потеряна. Переподключение...');
             addSysMsg('Потеряна связь с сервером сигналов. Восстанавливаем...');
@@ -321,7 +317,7 @@
             if (!nameInput) return alert('Пожалуйста, введите ваше имя!');
             
             myName = nameInput;
-            localStorage.setItem('my_p2p_name', myName); // Запоминаем имя
+            localStorage.setItem('my_p2p_name', myName); 
             
             if (!(await initMedia())) return;
 
@@ -346,14 +342,13 @@
             const remoteName = conn.metadata?.name || 'Аноним';
             const id = conn.peer;
 
-            // Очистка зависшей сессии, если участник переподключился с тем же ID
             if (peers[id]) removePeer(id);
 
             conn.on('open', () => {
                 setupConnectionData(conn, remoteName);
                 if (isHost) {
                     const existingPeers = Object.keys(peers)
-                        .filter(pId => pId !== id) // Не отправляем участнику его самого
+                        .filter(pId => pId !== id) 
                         .map(pId => ({ id: pId, name: peers[pId].name }));
                     conn.send({ type: 'room_state', peers: existingPeers });
                 }
@@ -362,8 +357,6 @@
 
         function connectToPeer(targetId, targetName = "Ожидание...") {
             if (targetId === peer.id) return; 
-            
-            // Если соединение уже есть, не дублируем
             if (peers[targetId] && peers[targetId].conn && peers[targetId].conn.open) return;
 
             const conn = peer.connect(targetId, { metadata: { name: myName } });
@@ -392,19 +385,14 @@
                 }
             });
 
-            // Корректная обработка отключений
             conn.on('close', () => removePeer(id));
             conn.on('error', () => removePeer(id));
-            
-            // Периодический пинг можно реализовать здесь, если закрытие не срабатывает, 
-            // но WebRTC 'close' обычно обрабатывается PeerJS надежно.
         }
 
         peer.on('call', (call) => {
             const remoteName = call.metadata?.name || 'Аноним';
             const id = call.peer;
             
-            // Очищаем старое видео, если участник перезванивает
             if (peers[id] && peers[id].call) {
                 if (peers[id].videoWrapper) peers[id].videoWrapper.remove();
             }
