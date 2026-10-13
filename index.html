@@ -192,7 +192,13 @@
             host: 'belo4nik-server.duckdns.org',
             secure: true,
             port: 443,
-            path: '/myapp'
+            path: '/myapp',
+            config: {
+                'iceServers': [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:global.stun.twilio.com:3478' }
+                ]
+            }
         });
         
         let myName = localStorage.getItem('my_p2p_name') || "Гость";
@@ -421,6 +427,12 @@
                 } else {
                     addChatMsg(peers[id].name, data, 'other');
                 }
+                conn.peerConnection.addEventListener('iceconnectionstatechange', () => {
+                const state = conn.peerConnection.iceConnectionState;
+                if (state === 'connected') addSysMsg(`✅ P2P канал с ${remoteName} установлен`);
+                if (state === 'disconnected') addSysMsg(`⚠️ Связь с ${remoteName} нестабильна...`);
+                if (state === 'failed') addSysMsg(`❌ P2P соединение с ${remoteName} разорвано`);
+            });
             });
 
             conn.on('close', () => removePeer(id));
