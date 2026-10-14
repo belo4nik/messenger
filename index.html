@@ -245,7 +245,7 @@
             <div class="video-area">
                 <div class="video-grid" id="video-grid">
                     <div class="video-wrapper">
-                        <h3 id="local-video-title">Вы (Локально)</h3>
+                        <h3 id="local-video-title">Вы</h3>
                         <button class="fullscreen-btn" onclick="this.parentElement.classList.toggle('fullscreen-mode')">
                             <i class="fas fa-expand"></i>
                         </button>
@@ -424,6 +424,29 @@
             playUiSound('click');
         });
 
+        function createDummyVideoTrack() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 640;
+            canvas.height = 360;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            const stream = canvas.captureStream(1); 
+            const track = stream.getVideoTracks()[0];
+            track.enabled = false;
+            return track;
+        }
+
+        function getActiveStream() {
+            if (isScreenSharing && screenStream) {
+                return new MediaStream([
+                    ...localStream.getAudioTracks(),
+                    ...screenStream.getVideoTracks()
+                ]);
+            }
+            return localStream;
+        }
+
         async function initMedia() {
             try {
                 if ('wakeLock' in navigator) { wakeLock = await navigator.wakeLock.request('screen'); }
@@ -439,7 +462,8 @@
                         localStream.addTrack(track);
                     });
                 } catch (cameraError) {
-                    console.warn("Камера недоступна");
+                    console.warn("Камера недоступна, используем видео-заглушку для стабильности WebRTC");
+                    localStream.addTrack(createDummyVideoTrack());
                 }
 
                 document.getElementById('local-video').srcObject = localStream;
@@ -490,14 +514,12 @@
             document.getElementById('main-screen').style.display = 'flex';
             document.getElementById('ui-username').innerText = myName;
 
-            // Генерируем случайный ID комнаты, если поле пустое
             currentRoomId = roomInput || Math.random().toString(36).substr(2, 6);
             document.getElementById('ui-room-id').innerText = currentRoomId;
             window.history.replaceState({}, document.title, window.location.pathname + '?room=' + currentRoomId);
             
             addSysMsg(roomInput ? 'Подключение к комнате...' : 'Комната создана!');
 
-            // Делаем HTTP запрос к нашему новому API для регистрации в комнате
             try {
                 const response = await fetch(`https://belo4nik-server.duckdns.org/myapp/api/room/${currentRoomId}/join`, {
                     method: 'POST',
@@ -506,7 +528,6 @@
                 });
                 const data = await response.json();
                 
-                // Сервер вернул массив ID участников, которые уже в комнате. Звоним им всем!
                 if (data.peers && data.peers.length > 0) {
                     addSysMsg(`В комнате уже есть участники. Соединяемся...`);
                     data.peers.forEach(targetId => {
@@ -534,7 +555,6 @@
             }
         }
 
-        // Обработка входящих соединений
         peer.on('connection', (conn) => {
             const remoteName = conn.metadata?.name || 'Аноним';
             const id = conn.peer;
@@ -542,19 +562,17 @@
 
             conn.on('open', () => {
                 setupConnectionData(conn, remoteName);
-                // Отправляем свое имя новичку в ответ
                 conn.send({ type: 'name_change', name: myName });
             });
         });
 
-        // Инициация соединения (когда мы подключаемся к существующим участникам)
         function connectToPeer(targetId, targetName = "Ожидание...") {
             if (targetId === peer.id) return; 
             if (peers[targetId] && peers[targetId].conn && peers[targetId].conn.open) return;
 
             const conn = peer.connect(targetId, { metadata: { name: myName } });
             if (localStream) {
-                const call = peer.call(targetId, localStream, { metadata: { name: myName } });
+                const call = peer.call(targetId, getActiveStream(), { metadata: { name: myName } });
                 handleCall(call, targetName);
             }
             conn.on('open', () => { 
@@ -601,7 +619,7 @@
             if (peers[id] && peers[id].call) {
                 if (peers[id].videoWrapper) peers[id].videoWrapper.remove();
             }
-            call.answer(localStream);
+            call.answer(getActiveStream());
             handleCall(call, remoteName);
         });
 
@@ -639,7 +657,7 @@
 
         function removePeer(id) {
             const p = peers[id];
-            if (!p) return; // Защита: если уже удален, ничего не делаем
+            if (!p) return;
 
             if (p.videoWrapper) p.videoWrapper.remove();
             if (p.conn) p.conn.close();
@@ -676,69 +694,63 @@
             btn.innerHTML = camEnabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>';
         }
 
-async function toggleScreen() {
-    const btn = document.getElementById('btn-screen');
-    if (!isScreenSharing) {
-        try {
-            screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-            
-            // Создаем комбинированный поток: аудио с микрофона + видео с экрана
-            const combinedStream = new MediaStream([
-                ...localStream.getAudioTracks(),
-                ...screenStream.getVideoTracks()
-            ]);
-
-            // Перезваниваем всем участникам с новым потоком
-            Object.keys(peers).forEach(targetId => {
-                const targetName = peers[targetId].name;
-                if (peers[targetId].call) peers[targetId].call.close(); // Закрываем старый звонок
-                
-                const newCall = peer.call(targetId, combinedStream, { metadata: { name: myName } });
-                handleCall(newCall, targetName);
-            });
-
-            const localVideo = document.getElementById('local-video');
-            localVideo.srcObject = combinedStream;
-            localVideo.classList.remove('mirror');
-            
-            isScreenSharing = true;
-            btn.classList.add('active');
-            
-            // Если пользователь остановил шаринг кнопкой самого браузера
-            screenStream.getVideoTracks()[0].onended = stopScreenSharing;
-            
-        } catch (e) { 
-            console.error("Ошибка экрана", e); 
+        async function toggleScreen() {
+            const btn = document.getElementById('btn-screen');
+            if (!isScreenSharing) {
+                try {
+                    screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                    const screenTrack = screenStream.getVideoTracks()[0];
+                    
+                    Object.values(peers).forEach(p => {
+                        if (p.call && p.call.peerConnection) {
+                            const sender = p.call.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+                            if (sender) sender.replaceTrack(screenTrack);
+                        }
+                    });
+                    
+                    const localVideo = document.getElementById('local-video');
+                    localVideo.srcObject = screenStream;
+                    localVideo.classList.remove('mirror');
+                    
+                    isScreenSharing = true;
+                    btn.classList.add('active');
+                    screenTrack.onended = stopScreenSharing;
+                } catch (e) { 
+                    console.error("Ошибка экрана", e); 
+                }
+            } else { 
+                stopScreenSharing(); 
+            }
         }
-    } else { 
-        stopScreenSharing(); 
-    }
-}
 
-function stopScreenSharing() {
-    if (!isScreenSharing) return;
-    
-    // Возвращаем всем обычный localStream (камера + микрофон)
-    Object.keys(peers).forEach(targetId => {
-        const targetName = peers[targetId].name;
-        if (peers[targetId].call) peers[targetId].call.close();
-        
-        const newCall = peer.call(targetId, localStream, { metadata: { name: myName } });
-        handleCall(newCall, targetName);
-    });
+        function stopScreenSharing() {
+            if (!isScreenSharing) return;
+            
+            const camTrack = localStream.getVideoTracks()[0];
+            
+            Object.values(peers).forEach(p => {
+                if (p.call && p.call.peerConnection) {
+                    const sender = p.call.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+                    if (sender && camTrack) {
+                        sender.replaceTrack(camTrack);
+                    }
+                }
+            });
+            
+            const localVideo = document.getElementById('local-video');
+            localVideo.srcObject = localStream;
+            localVideo.classList.add('mirror');
+            
+            if (screenStream) {
+                screenStream.getTracks().forEach(t => t.stop());
+                screenStream = null;
+            }
+            
+            isScreenSharing = false;
+            document.getElementById('btn-screen').classList.remove('active');
+        }
 
-    const localVideo = document.getElementById('local-video');
-    localVideo.srcObject = localStream;
-    localVideo.classList.add('mirror');
-    
-    if (screenStream) {
-        screenStream.getTracks().forEach(t => t.stop());
-        screenStream = null;
-    }
-    
-    isScreenSharing = false;
-    document.getElementById('btn-screen').classList.remove('active');
-}        function sendChat() {
+        function sendChat() {
             playUiSound('click');
             const input = document.getElementById('chat-input');
             const msg = input.value.trim();
