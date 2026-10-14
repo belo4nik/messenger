@@ -676,52 +676,69 @@
             btn.innerHTML = camEnabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>';
         }
 
-        async function toggleScreen() {
-            const btn = document.getElementById('btn-screen');
-            if (!isScreenSharing) {
-                try {
-                    screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-                    const screenTrack = screenStream.getVideoTracks()[0];
-                    Object.values(peers).forEach(p => {
-                        if (p.call && p.call.peerConnection) {
-                            const sender = p.call.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-                            if (sender) sender.replaceTrack(screenTrack);
-                            else p.call.peerConnection.addTrack(screenTrack, localStream);
-                        }
-                    });
-                    const localVideo = document.getElementById('local-video');
-                    localVideo.srcObject = screenStream;
-                    localVideo.classList.remove('mirror');
-                    isScreenSharing = true;
-                    btn.classList.add('active');
-                    screenTrack.onended = stopScreenSharing;
-                } catch (e) { console.error("Ошибка экрана", e); }
-            } else { stopScreenSharing(); }
-        }
+async function toggleScreen() {
+    const btn = document.getElementById('btn-screen');
+    if (!isScreenSharing) {
+        try {
+            screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            
+            // Создаем комбинированный поток: аудио с микрофона + видео с экрана
+            const combinedStream = new MediaStream([
+                ...localStream.getAudioTracks(),
+                ...screenStream.getVideoTracks()
+            ]);
 
-        function stopScreenSharing() {
-            const camTrack = localStream.getVideoTracks()[0];
-            Object.values(peers).forEach(p => {
-                if (p.call && p.call.peerConnection) {
-                    const sender = p.call.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-                    if (sender) {
-                        if (camTrack) sender.replaceTrack(camTrack);
-                        else p.call.peerConnection.removeTrack(sender);
-                    }
-                }
+            // Перезваниваем всем участникам с новым потоком
+            Object.keys(peers).forEach(targetId => {
+                const targetName = peers[targetId].name;
+                if (peers[targetId].call) peers[targetId].call.close(); // Закрываем старый звонок
+                
+                const newCall = peer.call(targetId, combinedStream, { metadata: { name: myName } });
+                handleCall(newCall, targetName);
             });
-            const localVideo = document.getElementById('local-video');
-            localVideo.srcObject = localStream;
-            localVideo.classList.add('mirror');
-            if (screenStream) {
-                screenStream.getTracks().forEach(t => t.stop());
-                screenStream = null;
-            }
-            isScreenSharing = false;
-            document.getElementById('btn-screen').classList.remove('active');
-        }
 
-        function sendChat() {
+            const localVideo = document.getElementById('local-video');
+            localVideo.srcObject = combinedStream;
+            localVideo.classList.remove('mirror');
+            
+            isScreenSharing = true;
+            btn.classList.add('active');
+            
+            // Если пользователь остановил шаринг кнопкой самого браузера
+            screenStream.getVideoTracks()[0].onended = stopScreenSharing;
+            
+        } catch (e) { 
+            console.error("Ошибка экрана", e); 
+        }
+    } else { 
+        stopScreenSharing(); 
+    }
+}
+
+function stopScreenSharing() {
+    if (!isScreenSharing) return;
+    
+    // Возвращаем всем обычный localStream (камера + микрофон)
+    Object.keys(peers).forEach(targetId => {
+        const targetName = peers[targetId].name;
+        if (peers[targetId].call) peers[targetId].call.close();
+        
+        const newCall = peer.call(targetId, localStream, { metadata: { name: myName } });
+        handleCall(newCall, targetName);
+    });
+
+    const localVideo = document.getElementById('local-video');
+    localVideo.srcObject = localStream;
+    localVideo.classList.add('mirror');
+    
+    if (screenStream) {
+        screenStream.getTracks().forEach(t => t.stop());
+        screenStream = null;
+    }
+    
+    isScreenSharing = false;
+    document.getElementById('btn-screen').classList.remove('active');
+}        function sendChat() {
             playUiSound('click');
             const input = document.getElementById('chat-input');
             const msg = input.value.trim();
