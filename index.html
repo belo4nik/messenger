@@ -34,13 +34,11 @@
             100% { background-position: 0% 50%; }
         }
         
-        /* Стили скроллбара */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 4px; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
 
-        /* --- ЭКРАН ВХОДА (GLASSMORPHISM) --- */
         #setup-screen {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             display: flex; align-items: center; justify-content: center;
@@ -55,16 +53,13 @@
             box-shadow: 0 25px 50px rgba(0,0,0,0.5), inset 0 0 20px rgba(255,255,255,0.02);
             width: 100%; max-width: 420px;
             text-align: center;
-            transform: translateY(0); transition: transform 0.3s ease;
         }
-        .setup-card:hover { transform: translateY(-5px); }
         .setup-card h1 { 
             margin-top: 0; 
             background: -webkit-linear-gradient(45deg, #00d2ff, #3a7bd5);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            font-size: 2.2rem;
-            margin-bottom: 5px;
+            font-size: 2.2rem; margin-bottom: 5px;
         }
         .setup-card p { color: #aaa; margin-bottom: 25px; }
         
@@ -74,8 +69,7 @@
             width: 100%; padding: 14px 14px 14px 45px;
             border-radius: 12px; border: 1px solid var(--border);
             background: rgba(0, 0, 0, 0.3); color: var(--text); 
-            box-sizing: border-box; font-size: 1rem;
-            transition: all 0.3s ease;
+            box-sizing: border-box; font-size: 1rem; transition: all 0.3s ease;
         }
         .input-field:focus {
             outline: none; border-color: var(--primary);
@@ -85,26 +79,19 @@
         .btn-primary {
             width: 100%; padding: 14px; 
             background: linear-gradient(45deg, #00d2ff, #3a7bd5); 
-            color: #fff;
-            border: none; border-radius: 12px; font-weight: bold; cursor: pointer;
-            margin-top: 15px; font-size: 1.1rem;
-            transition: all 0.3s ease;
+            color: #fff; border: none; border-radius: 12px; font-weight: bold; cursor: pointer;
+            margin-top: 15px; font-size: 1.1rem; transition: all 0.3s ease;
             box-shadow: 0 10px 20px rgba(0, 210, 255, 0.2);
         }
-        .btn-primary:hover { 
-            box-shadow: 0 10px 25px rgba(0, 210, 255, 0.4);
-            transform: scale(1.02); 
-        }
+        .btn-primary:hover { box-shadow: 0 10px 25px rgba(0, 210, 255, 0.4); transform: scale(1.02); }
         .help-text { font-size: 0.85rem; color: #888; margin-top: 15px; }
 
-        /* --- ГЛАВНЫЙ ЭКРАН --- */
         #main-screen { display: none; flex-direction: column; height: 100%; padding: 15px; box-sizing: border-box; gap: 15px; }
         
         .glass-panel {
             background: var(--surface);
             backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-            border: 1px solid var(--border);
-            border-radius: 16px;
+            border: 1px solid var(--border); border-radius: 16px;
         }
 
         .top-bar {
@@ -113,8 +100,7 @@
         }
         .room-info { 
             font-family: monospace; background: rgba(0,0,0,0.4); 
-            padding: 6px 12px; border-radius: 8px; color: var(--primary); 
-            letter-spacing: 1px;
+            padding: 6px 12px; border-radius: 8px; color: var(--primary); letter-spacing: 1px;
         }
         .icon-btn {
             background: none; border: none; color: var(--primary); 
@@ -137,8 +123,7 @@
         .video-wrapper h3 {
             position: absolute; bottom: 12px; left: 12px; margin: 0;
             background: rgba(0,0,0,0.6); backdrop-filter: blur(5px);
-            padding: 6px 12px; border-radius: 8px;
-            font-size: 0.9rem; z-index: 10; border: 1px solid rgba(255,255,255,0.1);
+            padding: 6px 12px; border-radius: 8px; font-size: 0.9rem; z-index: 10; border: 1px solid rgba(255,255,255,0.1);
         }
         video { width: 100%; height: 100%; object-fit: cover; }
         video.mirror { transform: scaleX(-1); }
@@ -151,15 +136,13 @@
             position: absolute; top: 12px; right: 12px;
             background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);
             color: white; border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 8px; padding: 8px 12px; cursor: pointer; z-index: 10;
-            transition: 0.2s;
+            border-radius: 8px; padding: 8px 12px; cursor: pointer; z-index: 10; transition: 0.2s;
         }
         .fullscreen-btn:hover { background: rgba(0,0,0,0.8); }
 
-        /* --- ПАНЕЛЬ УПРАВЛЕНИЯ --- */
         .controls-bar {
             padding: 15px; display: flex; justify-content: center; align-items: center; gap: 20px;
-            flex-wrap: wrap; flex-shrink: 0; /* Не дает панели сжаться на планшетах */
+            flex-wrap: wrap; flex-shrink: 0;
         }
         
         .control-group {
@@ -178,56 +161,30 @@
         .control-btn.danger { background: var(--danger); color: white; }
         .control-btn.danger:hover { background: #ff6b6b; box-shadow: 0 0 15px rgba(255, 75, 75, 0.4); }
 
-        /* Эквалайзер */
         .visualizer { display: flex; gap: 3px; height: 20px; align-items: center; opacity: 0.3; transition: 0.3s; }
         .visualizer.active { opacity: 1; }
         .visualizer .bar { width: 4px; background: var(--primary); border-radius: 2px; height: 4px; transition: height 0.05s ease; }
 
-        /* Ползунок громкости */
-        input[type=range] {
-            -webkit-appearance: none; background: rgba(255,255,255,0.1); 
-            height: 6px; border-radius: 3px; width: 80px; outline: none;
-        }
-        input[type=range]::-webkit-slider-thumb {
-            -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; 
-            background: var(--primary); cursor: pointer; box-shadow: 0 0 10px var(--primary-glow);
-        }
+        input[type=range] { -webkit-appearance: none; background: rgba(255,255,255,0.1); height: 6px; border-radius: 3px; width: 80px; outline: none; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--primary); cursor: pointer; box-shadow: 0 0 10px var(--primary-glow); }
 
-        /* --- ЧАТ --- */
-        .chat-area {
-            width: 320px; display: flex; flex-direction: column; overflow: hidden;
-        }
-        .chat-header { 
-            padding: 15px; border-bottom: 1px solid var(--border); 
-            font-weight: bold; text-align: center; letter-spacing: 1px; 
-        }
+        .chat-area { width: 320px; display: flex; flex-direction: column; overflow: hidden; }
+        .chat-header { padding: 15px; border-bottom: 1px solid var(--border); font-weight: bold; text-align: center; letter-spacing: 1px; }
         .chat-messages { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
         .msg { 
             background: rgba(0,0,0,0.4); padding: 10px 14px; border-radius: 12px; 
-            max-width: 85%; word-wrap: break-word; font-size: 0.95rem; line-height: 1.4;
-            border: 1px solid rgba(255,255,255,0.05);
+            max-width: 85%; word-wrap: break-word; font-size: 0.95rem; line-height: 1.4; border: 1px solid rgba(255,255,255,0.05);
         }
-        .msg.self { 
-            background: linear-gradient(45deg, #0f3460, #1a1a2e); 
-            border-color: rgba(0, 210, 255, 0.3);
-            align-self: flex-end; border-bottom-right-radius: 2px;
-        }
+        .msg.self { background: linear-gradient(45deg, #0f3460, #1a1a2e); border-color: rgba(0, 210, 255, 0.3); align-self: flex-end; border-bottom-right-radius: 2px; }
         .msg.other { align-self: flex-start; border-bottom-left-radius: 2px; }
         .sender-name { font-size: 0.75rem; color: var(--primary); margin-bottom: 5px; font-weight: bold; }
         
         .chat-input { padding: 15px; border-top: 1px solid var(--border); display: flex; gap: 10px; background: rgba(0,0,0,0.2); }
-        .chat-input input { 
-            flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--border); 
-            background: rgba(0,0,0,0.5); color: white; outline: none; transition: 0.2s;
-        }
+        .chat-input input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,0.5); color: white; outline: none; transition: 0.2s; }
         .chat-input input:focus { border-color: var(--primary); }
-        .chat-input button { 
-            background: var(--primary); color: #000; border: none; width: 45px; border-radius: 8px; 
-            cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center;
-        }
+        .chat-input button { background: var(--primary); color: #000; border: none; width: 45px; border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; }
         .chat-input button:hover { transform: scale(1.05); box-shadow: 0 0 10px var(--primary-glow); }
 
-        /* --- АДАПТИВНОСТЬ ДЛЯ ПЛАНШЕТОВ И ТЕЛЕФОНОВ --- */
         @media (max-width: 950px) {
             .workspace { flex-direction: column; overflow-y: auto; }
             .video-area { flex: none; height: auto; min-height: 50vh; overflow: visible; }
@@ -248,7 +205,7 @@
     <div id="setup-screen">
         <div class="setup-card">
             <h1><i class="fas fa-satellite-dish"></i> P2P Pro</h1>
-            <p>Защищенное пространство</p>
+            <p>Децентрализованная сеть</p>
             
             <div class="input-group">
                 <i class="fas fa-user"></i>
@@ -256,13 +213,13 @@
             </div>
             <div class="input-group">
                 <i class="fas fa-key"></i>
-                <input type="text" id="host-id" class="input-field" placeholder="Код комнаты (пусто = создать)">
+                <input type="text" id="room-id" class="input-field" placeholder="Код комнаты (пусто = новая)">
             </div>
             
             <button class="btn-primary" onclick="joinRoom()">
                 <i class="fas fa-sign-in-alt"></i> Войти в эфир
             </button>
-            <div class="help-text">Камера и микрофон выключены по умолчанию.</div>
+            <div class="help-text">Комната живет, пока в ней есть участники.</div>
         </div>
     </div>
     
@@ -297,7 +254,6 @@
                 </div>
                 
                 <div class="controls-bar glass-panel">
-                    <!-- Микрофон -->
                     <div class="control-group">
                         <button class="control-btn danger" id="btn-mic" onclick="toggleMic()" title="Микрофон">
                             <i class="fas fa-microphone-slash"></i>
@@ -307,17 +263,14 @@
                         </div>
                     </div>
                     
-                    <!-- Камера -->
                     <button class="control-btn danger" id="btn-cam" onclick="toggleCam()" title="Камера">
                         <i class="fas fa-video-slash"></i>
                     </button>
                     
-                    <!-- Демонстрация экрана -->
                     <button class="control-btn" id="btn-screen" onclick="toggleScreen()" title="Демонстрация экрана">
                         <i class="fas fa-desktop"></i>
                     </button>
 
-                    <!-- Общая громкость входящего звука -->
                     <div class="control-group">
                         <button class="control-btn active" id="btn-volume" onclick="toggleMute()" title="Входящий звук">
                             <i class="fas fa-volume-up"></i>
@@ -339,7 +292,6 @@
     </div>
 
     <script>
-        // Инициализация ID
         let myPeerId = localStorage.getItem('my_p2p_id');
         if (!myPeerId) {
             myPeerId = 'user_' + Math.random().toString(36).substr(2, 6);
@@ -360,15 +312,14 @@
                             'turn:belo4nik-server.duckdns.org:3478?transport=tcp'
                         ],
                         username: 'myuser', 
-                        credential: 'ad2tmi6e'
+                        credential: 'superpassword123'
                     }
                 ]
             }
         });
         
         let myName = localStorage.getItem('my_p2p_name') || "";
-        let isHost = false;
-        let actualHostId = null;
+        let currentRoomId = null;
         let localStream = null;
         let screenStream = null;
         let micEnabled = false;
@@ -376,10 +327,8 @@
         let isScreenSharing = false;
         const peers = {};
 
-        // Глобальная громкость (для входящих потоков)
         let globalVolume = 1;
         let isMuted = false;
-
         let audioCtx, analyser, dataArray;
         let uiAudioContext = null;
         let lastUiSoundAt = 0;
@@ -389,7 +338,7 @@
 
         const urlParams = new URLSearchParams(window.location.search);
         const roomFromUrl = urlParams.get('room');
-        if (roomFromUrl) document.getElementById('host-id').value = roomFromUrl;
+        if (roomFromUrl) document.getElementById('room-id').value = roomFromUrl;
 
         peer.on('disconnected', () => {
             addSysMsg('Потеряна связь с сервером сигналов. Восстанавливаем...');
@@ -398,10 +347,9 @@
 
         peer.on('error', (err) => {
             console.error('PeerJS Ошибка:', err);
-            if (err.type === 'peer-unavailable') addSysMsg('Ошибка: Собеседник недоступен.');
+            if (err.type === 'peer-unavailable') addSysMsg('Ошибка: Участник недоступен.');
         });
 
-        // --- Управление громкостью ---
         function changeVolume(val) {
             globalVolume = parseFloat(val);
             isMuted = globalVolume === 0;
@@ -442,7 +390,6 @@
             });
         }
 
-        // --- UI Звуки ---
         function playUiSound(kind = 'click') {
             try {
                 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -462,7 +409,6 @@
                 oscillator.frequency.setValueAtTime(isMessage ? 880 : 620, now);
                 oscillator.frequency.exponentialRampToValueAtTime(isMessage ? 1175 : 480, now + duration);
                 
-                // Звук UI не должен бить по ушам
                 const targetGain = isMessage ? 0.04 : 0.02;
                 gain.gain.setValueAtTime(0.0001, now);
                 gain.gain.exponentialRampToValueAtTime(targetGain, now + 0.008);
@@ -478,12 +424,9 @@
             playUiSound('click');
         });
 
-        // --- Медиа и инициализация ---
         async function initMedia() {
             try {
-                if ('wakeLock' in navigator) {
-                    wakeLock = await navigator.wakeLock.request('screen');
-                }
+                if ('wakeLock' in navigator) { wakeLock = await navigator.wakeLock.request('screen'); }
             } catch (err) {}
 
             try {
@@ -535,7 +478,7 @@
 
         async function joinRoom() {
             const nameInput = document.getElementById('username').value.trim();
-            let hostInput = document.getElementById('host-id').value.trim();
+            let roomInput = document.getElementById('room-id').value.trim();
             if (!nameInput) return alert('Пожалуйста, введите ваше имя!');
             
             myName = nameInput;
@@ -547,17 +490,34 @@
             document.getElementById('main-screen').style.display = 'flex';
             document.getElementById('ui-username').innerText = myName;
 
-            if (!hostInput) {
-                isHost = true;
-                actualHostId = peer.id;
-                document.getElementById('ui-room-id').innerText = peer.id;
-                addSysMsg('Комната создана. Скопируйте ссылку и отправьте участникам.');
-            } else {
-                isHost = false;
-                actualHostId = hostInput;
-                document.getElementById('ui-room-id').innerText = hostInput;
-                connectToPeer(hostInput);
-                window.history.replaceState({}, document.title, window.location.pathname);
+            // Генерируем случайный ID комнаты, если поле пустое
+            currentRoomId = roomInput || Math.random().toString(36).substr(2, 6);
+            document.getElementById('ui-room-id').innerText = currentRoomId;
+            window.history.replaceState({}, document.title, window.location.pathname + '?room=' + currentRoomId);
+            
+            addSysMsg(roomInput ? 'Подключение к комнате...' : 'Комната создана!');
+
+            // Делаем HTTP запрос к нашему новому API для регистрации в комнате
+            try {
+                const response = await fetch(`https://belo4nik-server.duckdns.org/myapp/api/room/${currentRoomId}/join`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ peerId: myPeerId })
+                });
+                const data = await response.json();
+                
+                // Сервер вернул массив ID участников, которые уже в комнате. Звоним им всем!
+                if (data.peers && data.peers.length > 0) {
+                    addSysMsg(`В комнате уже есть участники. Соединяемся...`);
+                    data.peers.forEach(targetId => {
+                        connectToPeer(targetId, "Ожидание...");
+                    });
+                } else {
+                    addSysMsg('Вы первый в этой комнате. Отправьте ссылку коллегам!');
+                }
+            } catch (err) {
+                console.error("Ошибка API комнат:", err);
+                addSysMsg('⚠️ Ошибка синхронизации с сервером комнат.');
             }
         }
 
@@ -574,7 +534,7 @@
             }
         }
 
-        // --- P2P Логика ---
+        // Обработка входящих соединений
         peer.on('connection', (conn) => {
             const remoteName = conn.metadata?.name || 'Аноним';
             const id = conn.peer;
@@ -582,15 +542,12 @@
 
             conn.on('open', () => {
                 setupConnectionData(conn, remoteName);
-                if (isHost) {
-                    const existingPeers = Object.keys(peers)
-                        .filter(pId => pId !== id) 
-                        .map(pId => ({ id: pId, name: peers[pId].name }));
-                    conn.send({ type: 'room_state', peers: existingPeers });
-                }
+                // Отправляем свое имя новичку в ответ
+                conn.send({ type: 'name_change', name: myName });
             });
         });
 
+        // Инициация соединения (когда мы подключаемся к существующим участникам)
         function connectToPeer(targetId, targetName = "Ожидание...") {
             if (targetId === peer.id) return; 
             if (peers[targetId] && peers[targetId].conn && peers[targetId].conn.open) return;
@@ -600,7 +557,9 @@
                 const call = peer.call(targetId, localStream, { metadata: { name: myName } });
                 handleCall(call, targetName);
             }
-            conn.on('open', () => { setupConnectionData(conn, targetName); });
+            conn.on('open', () => { 
+                setupConnectionData(conn, targetName); 
+            });
         }
 
         function setupConnectionData(conn, remoteName) {
@@ -609,25 +568,23 @@
             peers[id].conn = conn;
             peers[id].name = remoteName;
             
-            addSysMsg(`${remoteName} в сети.`);
+            addSysMsg(`${remoteName} на связи.`);
 
             conn.peerConnection.addEventListener('iceconnectionstatechange', () => {
                 const state = conn.peerConnection.iceConnectionState;
-                if (state === 'connected') addSysMsg(`✅ P2P с ${remoteName} установлен`);
-                if (state === 'failed') addSysMsg(`❌ Связь с ${remoteName} потеряна`);
+                if (state === 'connected') addSysMsg(`✅ P2P с ${peers[id].name} установлен`);
+                if (state === 'failed') addSysMsg(`❌ Связь с ${peers[id].name} потеряна`);
             });
 
             conn.on('data', (data) => {
                 if (typeof data === 'object') {
-                    if (data.type === 'room_state' && !isHost) {
-                        data.peers.forEach(p => { connectToPeer(p.id, p.name); });
-                    } else if (data.type === 'name_change') {
+                    if (data.type === 'name_change') {
                         const oldName = peers[id].name;
                         peers[id].name = data.name;
                         if (peers[id].videoWrapper) {
                             peers[id].videoWrapper.querySelector('h3').innerText = data.name;
                         }
-                        addSysMsg(`${oldName} теперь ${data.name}.`);
+                        if (oldName !== "Ожидание...") addSysMsg(`${oldName} теперь ${data.name}.`);
                     }
                 } else {
                     addChatMsg(peers[id].name, data, 'other');
@@ -668,7 +625,7 @@
                 
                 const videoEl = wrapper.querySelector('video');
                 videoEl.srcObject = remoteStream;
-                videoEl.volume = isMuted ? 0 : globalVolume; // Применяем текущую громкость
+                videoEl.volume = isMuted ? 0 : globalVolume;
 
                 document.getElementById('video-grid').appendChild(wrapper);
                 peers[id].videoWrapper = wrapper;
@@ -690,7 +647,6 @@
             }
         }
 
-        // --- Управление устройствами ---
         function toggleMic() {
             micEnabled = !micEnabled;
             localStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
@@ -735,7 +691,7 @@
                     isScreenSharing = true;
                     btn.classList.add('active');
                     screenTrack.onended = stopScreenSharing;
-                } catch (e) { console.error("Ошибка демонстрации экрана", e); }
+                } catch (e) { console.error("Ошибка экрана", e); }
             } else { stopScreenSharing(); }
         }
 
@@ -761,7 +717,6 @@
             document.getElementById('btn-screen').classList.remove('active');
         }
 
-        // --- Чат ---
         function sendChat() {
             playUiSound('click');
             const input = document.getElementById('chat-input');
@@ -788,7 +743,7 @@
         }
 
         function copyInviteLink() {
-            const url = window.location.origin + window.location.pathname + '?room=' + actualHostId;
+            const url = window.location.origin + window.location.pathname + '?room=' + currentRoomId;
             navigator.clipboard.writeText(url);
             addSysMsg("Ссылка скопирована!");
         }
