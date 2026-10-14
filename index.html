@@ -638,13 +638,17 @@
         }
 
         function removePeer(id) {
-            if (peers[id]) {
-                if (peers[id].videoWrapper) peers[id].videoWrapper.remove();
-                if (peers[id].conn) peers[id].conn.close();
-                if (peers[id].call) peers[id].call.close();
-                addSysMsg(`${peers[id].name} вышел(ла).`);
-                delete peers[id];
-            }
+            const p = peers[id];
+            if (!p) return; // Защита: если уже удален, ничего не делаем
+
+            if (p.videoWrapper) p.videoWrapper.remove();
+            if (p.conn) p.conn.close();
+            if (p.call) p.call.close();
+            
+            const participantName = p.name || 'Участник';
+            addSysMsg(`${participantName} отключился.`);
+            
+            delete peers[id];
         }
 
         function toggleMic() {
