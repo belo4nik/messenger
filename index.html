@@ -778,18 +778,19 @@
 
         function changeVolume(val) {
             globalVolume = parseFloat(val);
-            isMuted = globalVolume === 0;
+            isMuted = (globalVolume === 0);
             updateVolumeUI();
             applyVolumeToAll();
         }
 
         function toggleMute() {
             isMuted = !isMuted;
+            const slider = document.getElementById('volume-slider');
             if (isMuted) {
-                document.getElementById('volume-slider').value = 0;
+                slider.value = 0;
             } else {
                 if (globalVolume === 0) globalVolume = 1;
-                document.getElementById('volume-slider').value = globalVolume;
+                slider.value = globalVolume;
             }
             updateVolumeUI();
             applyVolumeToAll();
@@ -808,10 +809,19 @@
 
         function applyVolumeToAll() {
             const actualVol = isMuted ? 0 : globalVolume;
+            
+            // Находим все видео-элементы удаленных участников напрямую в DOM
+            document.querySelectorAll('#video-grid .video-wrapper:not(.local-video-wrapper) video').forEach(vid => {
+                vid.muted = (actualVol === 0);
+                try {
+                    vid.volume = actualVol;
+                } catch (e) {}
+            });
+
+            // Дополнительно регулируем через Web Audio GainNode (для мобильных браузеров)
             Object.values(peers).forEach(p => {
-                if (p.videoWrapper) {
-                    const vid = p.videoWrapper.querySelector('video');
-                    if (vid) vid.volume = actualVol;
+                if (p.gainNode) {
+                    p.gainNode.gain.value = actualVol;
                 }
             });
         }
@@ -1055,7 +1065,16 @@
             peers[id].call = call;
             
             call.on('stream', (remoteStream) => {
-                if (peers[id].videoWrapper) return;
+                // Если карточка уже создана, просто обновляем в ней поток и громкость
+                if (peers[id].videoWrapper) {
+                    const existingVid = peers[id].videoWrapper.querySelector('video');
+                    if (existingVid && existingVid.srcObject !== remoteStream) {
+                        existingVid.srcObject = remoteStream;
+                        applyVolumeToAll();
+                        existingVid.play().catch(() => {});
+                    }
+                    return;
+                }
                 
                 const wrapper = document.createElement('div');
                 wrapper.className = 'video-wrapper';
@@ -1064,12 +1083,15 @@
                     <button class="fullscreen-btn" onclick="toggleVideoFullscreen(this)" title="Развернуть видео" aria-label="Развернуть видео участника">
                         <i class="fas fa-expand"></i>
                     </button>
-                    <video playsinline></video>
+                    <video autoplay playsinline></video>
                 `;
                 
                 const videoEl = wrapper.querySelector('video');
                 videoEl.srcObject = remoteStream;
-                videoEl.volume = isMuted ? 0 : globalVolume;
+                
+                const actualVol = isMuted ? 0 : globalVolume;
+                videoEl.muted = (actualVol === 0);
+                try { videoEl.volume = actualVol; } catch (e) {}
 
                 document.getElementById('video-grid').appendChild(wrapper);
                 peers[id].videoWrapper = wrapper;
